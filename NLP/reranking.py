@@ -1,7 +1,8 @@
-
 """
 RERANKER - FEATURE ENGINEERING MODULE
 Calcola feature esplicite e interpretabili per il reranking delle coppie CV-JD.
+
+AGGIORNAMENTO: usa min_experience_years_normalized invece di estrarre anni da requirements
 """
 
 import pandas as pd
@@ -20,7 +21,18 @@ class Config:
     CV_DATASET_PATH: str = "Dataset/normalized/cv_dataset_normalized.csv"
     JD_DATASET_PATH: str = "Dataset/normalized/jd_dataset_normalized.csv"
     OUTPUT_PATH: str = "rerank_results/reranker_features.csv"
+    
+    # Fattore di penalità per gap esperienza negativo
+    # Es: se mancano 2 anni, penalty = 2 * 0.1 = 0.2
     EXPERIENCE_GAP_PENALTY_FACTOR: float = 0.1
+    
+    # Fattore di bonus per esperienza extra (più basso della penalità)
+    # Es: se hai 2 anni in più, bonus = 2 * 0.02 = 0.04
+    EXPERIENCE_EXTRA_BONUS_FACTOR: float = 0.02
+    
+    # Soglia oltre la quale l'esperienza extra non dà più bonus
+    EXPERIENCE_EXTRA_CAP: float = 5.0
+    
     SENIORITY_LEVELS: Dict[str, int] = None
     LANGUAGE_LEVELS: Dict[str, int] = None
 
@@ -64,17 +76,6 @@ def parse_languages_string(lang_str: str) -> Dict[str, str]:
     for lang, level in matches:
         languages[lang.lower()] = level.lower()
     return languages
-
-
-def extract_years_from_requirements(req_str: str) -> Optional[int]:
-    if pd.isna(req_str):
-        return None
-    patterns = [r'(\d+)\+?\s*years?', r'(\d+)\+?\s*anni']
-    for pattern in patterns:
-        match = re.search(pattern, str(req_str).lower())
-        if match:
-            return int(match.group(1))
-    return None
 
 
 def get_seniority_numeric(seniority: str, config: Config) -> int:
@@ -171,7 +172,8 @@ def compute_skills_features(
         jd_requirements = parse_skills_string(jd_req_dict.get(jd_id, ''))
         jd_nice_to_have = parse_skills_string(jd_nice_dict.get(jd_id, ''))
 
-        jd_requirements = {s for s in jd_requirements if not re.search(r'\d+\+?\s*(years?|anni)', s)}
+        # NOTA: non serve più filtrare "X+ years" dai requirements
+        # perché ora gli anni sono in una colonna separata (min_experience_years_normalized)
 
         core_overlap = cv_skills.intersection(jd_requirements)
         nice_overlap = cv_skills.intersection(jd_nice_to_have)
@@ -206,33 +208,109 @@ def compute_experience_features(
     jd_data: pd.DataFrame,
     config: Config
 ) -> pd.DataFrame:
+    """
+    Calcola feature relative all'esperienza lavorativa.
+    
+    AGGIORNAMENTO: ora usa min_experience_years_normalized dalla JD
+    invece di estrarre gli anni dal testo dei requirements.
+    
+    Questo garantisce:
+    - Maggiore affidabilità (niente regex)
+    - Coerenza con il resto della pipeline
+    - Valori già validati e normalizzati
+    """
+    # Dizionari per lookup veloce
     cv_years_dict = dict(zip(cv_data['user_id'], cv_data['years_of_experience']))
-    jd_req_dict = dict(zip(jd_data['jd_id'], jd_data['requirements']))
+    
+    # AGGIORNAMENTO: usa min_experience_years_normalized invece di requirements
+    # Fallback a min_experience_years se la colonna normalizzata non esiste
+    if 'min_experience_years_normalized' in jd_data.columns:
+        jd_years_dict = dict(zip(jd_data['jd_id'], jd_data['min_experience_years_normalized']))
+        print("  [experience] Usando min_experience_years_normalized")
+    elif 'min_experience_years' in jd_data.columns:
+        jd_years_dict = dict(zip(jd_data['jd_id'], jd_data['min_experience_years']))
+        print("  [experience] Usando min_experience_years (non normalizzato)")
+    else:
+        # Fallback legacy: estrai da requirements (per retrocompatibilità)
+        print("  [experience] ⚠ Colonna min_experience_years non trovata, usando fallback regex")
+        jd_years_dict = {}
+        for _, row in jd_data.iterrows():
+            jd_id = row['jd_id']
+            req = row.get('requirements', '')
+            years = _extract_years_from_requirements_legacy(req)
+            jd_years_dict[jd_id] = years if years else 0
 
     features = []
     for _, row in reranker_input.iterrows():
         jd_id, user_id = row['jd_id'], row['user_id']
 
+        # Anni di esperienza del candidato (dal CV normalizzato)
         cv_years = cv_years_dict.get(user_id, 0)
-        cv_years = 0 if pd.isna(cv_years) else cv_years
+        cv_years = float(cv_years) if pd.notna(cv_years) else 0.0
 
-        jd_years = extract_years_from_requirements(jd_req_dict.get(jd_id, ''))
-        jd_years = 0 if jd_years is None else jd_years
+        # Anni minimi richiesti dalla JD
+        jd_years = jd_years_dict.get(jd_id, 0)
+        jd_years = float(jd_years) if pd.notna(jd_years) else 0.0
 
+        # Gap = CV - JD (positivo se il candidato ha più esperienza)
         experience_gap = cv_years - jd_years
-        experience_penalty_soft = abs(experience_gap) * config.EXPERIENCE_GAP_PENALTY_FACTOR if experience_gap < 0 else 0.0
+        
+        # Penalità se sotto-qualificato (gap negativo)
+        # Più anni mancano, più alta è la penalità
+        if experience_gap < 0:
+            experience_penalty_soft = abs(experience_gap) * config.EXPERIENCE_GAP_PENALTY_FACTOR
+        else:
+            experience_penalty_soft = 0.0
+        
+        # Bonus se sovra-qualificato (gap positivo), con cap
+        # Un po' di esperienza extra è positivo, troppa potrebbe indicare overqualification
+        if experience_gap > 0:
+            capped_extra = min(experience_gap, config.EXPERIENCE_EXTRA_CAP)
+            experience_bonus = capped_extra * config.EXPERIENCE_EXTRA_BONUS_FACTOR
+        else:
+            experience_bonus = 0.0
+        
+        # Flag: soddisfa il requisito minimo?
+        experience_meets_requirement = 1 if cv_years >= jd_years else 0
+        
+        # Flag: significativamente sotto-qualificato (mancano 2+ anni)?
+        experience_significantly_under = 1 if experience_gap <= -2 else 0
+        
+        # Flag: potenzialmente sovra-qualificato (5+ anni in più)?
+        experience_overqualified = 1 if experience_gap >= 5 else 0
 
         features.append({
-            'jd_id': jd_id, 'user_id': user_id,
-            'years_experience_cv': cv_years,
-            'years_required_jd': jd_years,
-            'experience_gap': experience_gap,
-            'experience_gap_abs': abs(experience_gap),
-            'experience_meets_requirement': 1 if cv_years >= jd_years else 0,
-            'experience_penalty_soft': experience_penalty_soft
+            'jd_id': jd_id, 
+            'user_id': user_id,
+            'years_experience_cv': round(cv_years, 1),
+            'years_required_jd': round(jd_years, 1),
+            'experience_gap': round(experience_gap, 1),
+            'experience_gap_abs': round(abs(experience_gap), 1),
+            'experience_meets_requirement': experience_meets_requirement,
+            'experience_penalty_soft': round(experience_penalty_soft, 4),
+            'experience_bonus': round(experience_bonus, 4),
+            'experience_significantly_under': experience_significantly_under,
+            'experience_overqualified': experience_overqualified
         })
 
     return pd.DataFrame(features)
+
+
+def _extract_years_from_requirements_legacy(req_str: str) -> Optional[int]:
+    """
+    LEGACY: Estrae anni di esperienza dal testo dei requirements.
+    Usato solo come fallback se min_experience_years non è disponibile.
+    
+    DEPRECATO: preferire l'uso di min_experience_years_normalized.
+    """
+    if pd.isna(req_str):
+        return None
+    patterns = [r'(\d+)\+?\s*years?', r'(\d+)\+?\s*anni']
+    for pattern in patterns:
+        match = re.search(pattern, str(req_str).lower())
+        if match:
+            return int(match.group(1))
+    return None
 
 
 def compute_seniority_features(
@@ -337,12 +415,25 @@ def compute_parsing_quality_features(
 def build_all_features(config: Config) -> pd.DataFrame:
     reranker_input, cv_data, jd_data = load_data(config)
 
+    print("\nComputing features...")
+    
     semantic_features = compute_semantic_features(reranker_input)
+    print("  ✓ Semantic features")
+    
     skills_features = compute_skills_features(reranker_input, cv_data, jd_data)
+    print("  ✓ Skills features")
+    
     experience_features = compute_experience_features(reranker_input, cv_data, jd_data, config)
+    print("  ✓ Experience features")
+    
     seniority_features = compute_seniority_features(reranker_input, cv_data, jd_data, config)
+    print("  ✓ Seniority features")
+    
     role_features = compute_role_features(reranker_input, cv_data, jd_data)
+    print("  ✓ Role features")
+    
     parsing_features = compute_parsing_quality_features(reranker_input, cv_data)
+    print("  ✓ Parsing quality features")
 
     all_features = semantic_features.copy()
     all_features['retrieval_rank'] = reranker_input['rank'].values
@@ -357,7 +448,17 @@ def build_all_features(config: Config) -> pd.DataFrame:
 
     Path(config.OUTPUT_PATH).parent.mkdir(parents=True, exist_ok=True)
     all_features.to_csv(config.OUTPUT_PATH, index=False)
-    print(f"Output: {config.OUTPUT_PATH} ({len(all_features)} rows, {len(all_features.columns) - 3} features)")
+    
+    print(f"\nOutput: {config.OUTPUT_PATH}")
+    print(f"  Rows: {len(all_features)}")
+    print(f"  Features: {len(all_features.columns) - 3}")
+    
+    # Statistiche esperienza
+    print(f"\nExperience statistics:")
+    print(f"  Candidates meeting requirements: {all_features['experience_meets_requirement'].sum()}/{len(all_features)} ({all_features['experience_meets_requirement'].mean()*100:.1f}%)")
+    print(f"  Significantly under-qualified: {all_features['experience_significantly_under'].sum()}")
+    print(f"  Potentially over-qualified: {all_features['experience_overqualified'].sum()}")
+    print(f"  Avg experience gap: {all_features['experience_gap'].mean():.1f} years")
 
     return all_features
 
@@ -365,19 +466,14 @@ def build_all_features(config: Config) -> pd.DataFrame:
 if __name__ == "__main__":
     features_df = build_all_features(config)
 
-"""
-RERANKER - DEI TAG ADJUSTMENT MODULE
-Aggiunge i tag DEI dai CV e applica adjustment alla classifica.
-"""
 
-import pandas as pd
-import numpy as np
-from pathlib import Path
-from dataclasses import dataclass
-
+# =============================================================================
+# RERANKER - DEI TAG ADJUSTMENT MODULE
+# Aggiunge i tag DEI dai CV e applica adjustment alla classifica.
+# =============================================================================
 
 @dataclass
-class Config:
+class DEIConfig:
     FEATURES_INPUT_PATH: str = "rerank_results/reranker_features.csv"
     CV_DATASET_PATH: str = "Dataset/normalized/cv_dataset_normalized.csv"
     JD_DATASET_PATH: str = "Dataset/normalized/jd_dataset_normalized.csv"
@@ -387,10 +483,10 @@ class Config:
     TAG_BOOST: float = 0.05
 
 
-config = Config()
+dei_config = DEIConfig()
 
 
-def load_data(config: Config):
+def load_dei_data(config: DEIConfig):
     features = pd.read_csv(config.FEATURES_INPUT_PATH)
     cv_data = pd.read_csv(config.CV_DATASET_PATH)
     jd_data = pd.read_csv(config.JD_DATASET_PATH)
@@ -402,32 +498,37 @@ def load_data(config: Config):
 def add_dei_tags(features: pd.DataFrame, cv_data: pd.DataFrame) -> pd.DataFrame:
     """Aggiunge le colonne tag dal CV dataset."""
     tag_cols = ['tag_women', 'tag_protected_category']
+    
+    # Verifica quali colonne esistono effettivamente
+    existing_tag_cols = [col for col in tag_cols if col in cv_data.columns]
+    
+    if not existing_tag_cols:
+        print("  ⚠ Nessuna colonna tag trovata nel CV dataset")
+        features['dei_tag_count'] = 0
+        return features
 
-    cv_tags = cv_data[['user_id'] + tag_cols].copy()
+    cv_tags = cv_data[['user_id'] + existing_tag_cols].copy()
 
     # Converti True/NaN in 1/0
-    for col in tag_cols:
+    for col in existing_tag_cols:
         cv_tags[col] = cv_tags[col].notna().astype(int)
 
     # Merge con features
     result = features.merge(cv_tags, on='user_id', how='left')
 
     # Fill eventuali NaN rimasti
-    for col in tag_cols:
+    for col in existing_tag_cols:
         result[col] = result[col].fillna(0).astype(int)
 
     # Conta tag totali per candidato (0, 1, o 2)
-    result['dei_tag_count'] = result[tag_cols].sum(axis=1)
+    result['dei_tag_count'] = result[existing_tag_cols].sum(axis=1)
 
     return result
 
 
-def compute_dei_score(features: pd.DataFrame, config: Config) -> pd.DataFrame:
+def compute_dei_score(features: pd.DataFrame, config: DEIConfig) -> pd.DataFrame:
     """Calcola uno score DEI basato sui tag e target."""
     result = features.copy()
-
-    tag_cols = ['tag_1_2_generation', 'tag_disability_inclusive',
-                'tag_refugee_background', 'tag_women_in_tech']
 
     # Score DEI = numero di tag * boost
     result['dei_boost'] = result['dei_tag_count'] * config.TAG_BOOST
@@ -459,8 +560,8 @@ def rerank_with_dei(features: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
-def build_dei_adjusted_features(config: Config) -> pd.DataFrame:
-    features, cv_data, _ = load_data(config)
+def build_dei_adjusted_features(config: DEIConfig) -> pd.DataFrame:
+    features, cv_data, _ = load_dei_data(config)
 
     # Aggiungi tag DEI
     features = add_dei_tags(features, cv_data)
@@ -490,23 +591,13 @@ def build_dei_adjusted_features(config: Config) -> pd.DataFrame:
     return features
 
 
-if __name__ == "__main__":
-    features_df = build_dei_adjusted_features(config)
-
-"""
-RERANKER - LINEAR MODEL + JSON OUTPUT
-Modello lineare per scoring finale e generazione output JSON stabile.
-"""
-
-import pandas as pd
-import json
-from pathlib import Path
-from dataclasses import dataclass
-from datetime import datetime
-
+# =============================================================================
+# RERANKER - LINEAR MODEL + JSON OUTPUT
+# Modello lineare per scoring finale e generazione output JSON stabile.
+# =============================================================================
 
 @dataclass
-class Config:
+class LinearConfig:
     FEATURES_INPUT_PATH: str = "rerank_results/reranker_features.csv"
     OUTPUT_JSON_PATH: str = "rerank_results/rerank_output.json"
 
@@ -526,7 +617,8 @@ class Config:
             'skill_overlap_nice_norm': 0.05,
 
             # Esperienza (totale ~0.20)
-            'experience_meets_requirement': 0.20,
+            'experience_meets_requirement': 0.15,
+            'experience_bonus': 0.05,  # NUOVO: bonus per esperienza extra
 
             # Seniority (totale ~0.15)
             'seniority_match': 0.15,
@@ -538,21 +630,22 @@ class Config:
             # Penalita
             'must_have_missing': -0.05,
             'experience_penalty_soft': -0.10,
+            'experience_significantly_under': -0.10,  # NUOVO: penalità forte se mancano 2+ anni
             'seniority_mismatch_strong': -0.15,
             'seniority_underskilled': -0.05,
         }
 
 
-config = Config()
+linear_config = LinearConfig()
 
 
-def load_features(config: Config) -> pd.DataFrame:
+def load_features(config: LinearConfig) -> pd.DataFrame:
     df = pd.read_csv(config.FEATURES_INPUT_PATH)
     print(f"Loaded: {len(df)} candidate-JD pairs")
     return df
 
 
-def compute_linear_score(df: pd.DataFrame, config: Config) -> pd.DataFrame:
+def compute_linear_score(df: pd.DataFrame, config: LinearConfig) -> pd.DataFrame:
     """Calcola lo score con modello lineare a pesi predefiniti."""
     result = df.copy()
 
@@ -589,7 +682,7 @@ def compute_linear_score(df: pd.DataFrame, config: Config) -> pd.DataFrame:
     return result
 
 
-def build_candidate_entry(row: pd.Series, config: Config) -> dict:
+def build_candidate_entry(row: pd.Series, config: LinearConfig) -> dict:
     """Costruisce l'entry JSON per un singolo candidato."""
 
     # Valori delle feature
@@ -615,12 +708,20 @@ def build_candidate_entry(row: pd.Series, config: Config) -> dict:
             'dei_boost': round(float(row.get('dei_boost', 0)), 4),
             'final_score': round(float(row['final_score']), 4)
         },
+        'experience_details': {
+            'cv_years': round(float(row.get('years_experience_cv', 0)), 1),
+            'required_years': round(float(row.get('years_required_jd', 0)), 1),
+            'gap': round(float(row.get('experience_gap', 0)), 1),
+            'meets_requirement': bool(row.get('experience_meets_requirement', 0))
+        },
         'feature_values': feature_values,
         'feature_contributions': feature_contributions,
         'flags': {
             'seniority_mismatch_strong': bool(row.get('seniority_mismatch_strong', 0)),
             'underskilled': bool(row.get('seniority_underskilled', 0)),
             'experience_below_requirement': bool(row.get('experience_meets_requirement', 1) == 0),
+            'experience_significantly_under': bool(row.get('experience_significantly_under', 0)),
+            'experience_overqualified': bool(row.get('experience_overqualified', 0)),
             'has_dei_tag': bool(row.get('dei_tag_count', 0) > 0)
         },
         'dei_tags': {
@@ -630,7 +731,7 @@ def build_candidate_entry(row: pd.Series, config: Config) -> dict:
     }
 
 
-def build_jd_entry(jd_id: str, jd_df: pd.DataFrame, config: Config) -> dict:
+def build_jd_entry(jd_id: str, jd_df: pd.DataFrame, config: LinearConfig) -> dict:
     """Costruisce l'entry JSON per una singola JD con tutti i candidati."""
     # Ordina per rank finale
     jd_df = jd_df.sort_values('final_rank')
@@ -644,16 +745,19 @@ def build_jd_entry(jd_id: str, jd_df: pd.DataFrame, config: Config) -> dict:
     }
 
 
-def build_output_json(df: pd.DataFrame, config: Config) -> dict:
+def build_output_json(df: pd.DataFrame, config: LinearConfig) -> dict:
     """Costruisce l'output JSON completo."""
+    from datetime import datetime
+    
     output = {
         'metadata': {
             'generated_at': datetime.now().isoformat(),
             'total_jds': df['jd_id'].nunique(),
             'total_candidates': len(df),
             'scoring_method': 'linear_weighted_model',
-            'version': '1.0',
-            'weights': config.WEIGHTS
+            'version': '1.1',  # Aggiornato per riflettere le modifiche
+            'weights': config.WEIGHTS,
+            'notes': 'Uses min_experience_years_normalized for experience comparison'
         },
         'results': []
     }
@@ -665,7 +769,9 @@ def build_output_json(df: pd.DataFrame, config: Config) -> dict:
     return output
 
 
-def run_reranker(config: Config) -> dict:
+def run_reranker(config: LinearConfig) -> dict:
+    import json
+    
     # Carica feature
     df = load_features(config)
 
@@ -686,6 +792,41 @@ def run_reranker(config: Config) -> dict:
     return output
 
 
-if __name__ == "__main__":
-    output = run_reranker(config)
+# =============================================================================
+# MAIN ENTRY POINT
+# =============================================================================
 
+def run_full_pipeline():
+    """Esegue l'intera pipeline di reranking."""
+    print("="*60)
+    print("RERANKER PIPELINE")
+    print("="*60)
+    
+    # Step 1: Feature Engineering
+    print("\n[1/3] Feature Engineering")
+    print("-"*40)
+    features_df = build_all_features(config)
+    
+    # Step 2: DEI Adjustment
+    print("\n[2/3] DEI Tag Adjustment")
+    print("-"*40)
+    features_df = build_dei_adjusted_features(dei_config)
+    
+    # Step 3: Linear Model & JSON Output
+    print("\n[3/3] Linear Model Scoring")
+    print("-"*40)
+    output = run_reranker(linear_config)
+    
+    print("\n" + "="*60)
+    print("PIPELINE COMPLETED")
+    print("="*60)
+    
+    return output
+
+
+if __name__ == "__main__":
+    # Per eseguire solo il feature engineering:
+    # features_df = build_all_features(config)
+    
+    # Per eseguire l'intera pipeline:
+    run_full_pipeline()
