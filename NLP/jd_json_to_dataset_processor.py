@@ -3,6 +3,8 @@
 jd_to_csv_processor.py
 Converte file JSON JD in un dataset CSV tabulare
 Con controllo duplicati e pulizia JD eliminate
+
+AGGIORNAMENTO: aggiunto supporto per campo min_experience_years
 """
 
 import json
@@ -214,7 +216,17 @@ def flatten_metadata(data: Dict) -> Dict:
 def json_to_row(data: Dict, source_file: str) -> Dict:
     """
     Trasforma un JSON JD in una riga del dataset.
+
+    AGGIORNAMENTO: aggiunto campo min_experience_years tra description e requirements.
+    Questo campo rappresenta gli anni di esperienza minimi richiesti come numero intero.
+    Se il campo non è presente nel JSON, viene impostato a stringa vuota.
     """
+    # Estrazione del nuovo campo min_experience_years
+    # Il campo è opzionale: se non presente, restituisce stringa vuota
+    # Se presente, lo converte in stringa per consistenza con gli altri campi numerici
+    min_exp = data.get('min_experience_years')
+    min_experience_years = str(min_exp) if min_exp is not None else ''
+
     row = {
         'jd_id': data.get('jd_id', ''),
         'source_file': source_file,
@@ -222,6 +234,8 @@ def json_to_row(data: Dict, source_file: str) -> Dict:
         'title': data.get('title', ''),
         'department': data.get('department', ''),
         'description': data.get('description', ''),
+        # NUOVO CAMPO: min_experience_years (inserito tra description e requirements)
+        'min_experience_years': min_experience_years,
         'requirements': LIST_SEP.join(data.get('requirements', [])),
         'nice_to_have': LIST_SEP.join(data.get('nice_to_have', []))
     }
@@ -343,6 +357,12 @@ def process_files(input_dir: str, output_dir: str, output_file: str):
     if full_output_path.exists():
         existing_df = pd.read_csv(full_output_path, encoding='utf-8')
 
+        # Aggiungi la nuova colonna se non esiste nel CSV esistente
+        # Questo garantisce retrocompatibilità con dataset creati prima dell'aggiornamento
+        if 'min_experience_years' not in existing_df.columns:
+            existing_df['min_experience_years'] = ''
+            print("  Aggiunta nuova colonna 'min_experience_years' al dataset esistente")
+
         for row_index, row_data in rows_to_update:
             for col, value in row_data.items():
                 if col in existing_df.columns:
@@ -360,10 +380,14 @@ def process_files(input_dir: str, output_dir: str, output_file: str):
             print("Nessuna riga da salvare")
             return False
 
+    # AGGIORNAMENTO: aggiunta colonna min_experience_years nella posizione corretta
+    # (tra description e requirements)
     cols = [
         'jd_id', 'source_file', 'processed_at', 'title', 'department',
         'location_city', 'location_country', 'location_remote',
-        'description', 'requirements', 'nice_to_have',
+        'description',
+        'min_experience_years',  # NUOVO CAMPO
+        'requirements', 'nice_to_have',
         'constraints_visa', 'constraints_relocation', 'constraints_seniority', 'constraints_languages',
         'dei_gender_target', 'dei_underrepresented_target',
         'salary_min', 'salary_max', 'salary_currency', 'contract'
