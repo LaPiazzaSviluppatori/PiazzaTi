@@ -3,6 +3,8 @@
 Script di Normalizzazione Dataset CV e JD
 Calcola seniority da anni di esperienza reali invece che da keyword nei titoli.
 Normalizza salary in formato leggibile e gestisce tag DE&I.
+
+AGGIORNAMENTO: aggiunto supporto per campo min_experience_years nelle JD
 """
 
 import json
@@ -26,6 +28,17 @@ ONTOLOGY_FILE = DATASET_DIR / "skill_ontology.json"
 OUTPUT_DIR = DATASET_DIR / "normalized"
 OUTPUT_CV = OUTPUT_DIR / "cv_dataset_normalized.csv"
 OUTPUT_JD = OUTPUT_DIR / "jd_dataset_normalized.csv"
+
+# Configurazione per min_experience_years
+MIN_EXP_YEARS_DEFAULT = 2  # Valore di default se mancante
+MIN_EXP_YEARS_RANGE = (1, 10)  # Range valido (min, max)
+
+# Mappatura seniority -> anni di esperienza di default
+SENIORITY_TO_YEARS = {
+    "junior": 1,
+    "mid": 3,
+    "senior": 5
+}
 
 # ============================================================================
 # CARICAMENTO ONTOLOGIA
@@ -308,6 +321,70 @@ def extract_salary_range(salary_str: str) -> str:
 
     return salary_clean
 
+
+def normalize_min_experience_years(value, seniority: str = None) -> int:
+    """
+    Normalizza il campo min_experience_years.
+    
+    Logica:
+    1. Se il valore è valido (numero nel range), lo usa
+    2. Se mancante/invalido ma c'è seniority, inferisce da seniority
+    3. Altrimenti usa il default
+    
+    Args:
+        value: valore dal CSV (può essere int, float, str, NaN)
+        seniority: livello seniority normalizzato (opzionale, per inferenza)
+    
+    Returns:
+        int: anni di esperienza minimi (nel range configurato)
+    """
+    # Caso 1: valore valido presente
+    if pd.notna(value):
+        try:
+            years = int(float(value))
+            # Verifica che sia nel range valido
+            min_val, max_val = MIN_EXP_YEARS_RANGE
+            if min_val <= years <= max_val:
+                return years
+            # Se fuori range, clamp al range valido
+            return max(min_val, min(max_val, years))
+        except (ValueError, TypeError):
+            pass
+    
+    # Caso 2: inferisci da seniority se disponibile
+    if seniority and seniority in SENIORITY_TO_YEARS:
+        return SENIORITY_TO_YEARS[seniority]
+    
+    # Caso 3: usa default
+    return MIN_EXP_YEARS_DEFAULT
+
+
+def validate_seniority_experience_consistency(seniority: str, min_years: int) -> Tuple[bool, str]:
+    """
+    Verifica la coerenza tra seniority e anni di esperienza richiesti.
+    
+    Restituisce una tupla (is_consistent, warning_message).
+    Questo serve per segnalare eventuali incongruenze nei dati.
+    """
+    expected_ranges = {
+        "junior": (0, 2),
+        "mid": (2, 5),
+        "senior": (5, 15)
+    }
+    
+    if seniority not in expected_ranges:
+        return True, ""
+    
+    min_expected, max_expected = expected_ranges[seniority]
+    
+    if min_years < min_expected:
+        return False, f"seniority '{seniority}' con solo {min_years} anni richiesti (atteso >= {min_expected})"
+    elif min_years > max_expected:
+        return False, f"seniority '{seniority}' con {min_years} anni richiesti (atteso <= {max_expected})"
+    
+    return True, ""
+
+
 # ============================================================================
 # NORMALIZZAZIONE DATASET
 # ============================================================================
@@ -428,6 +505,65 @@ def normalize_jd_dataset(input_path: Path, output_path: Path, ontology: SkillOnt
         print(f"    {level:8} {count:3}")
     print()
 
+    # =========================================================================
+    # NUOVO: Normalizzazione min_experience_years
+    # =========================================================================
+    print("Normalizzazione min_experience_years...")
+    
+    # Verifica se la colonna esiste
+    if 'min_experience_years' in df.columns:
+        # Normalizza usando la seniority per inferire valori mancanti
+        df['min_experience_years_normalized'] = df.apply(
+            lambda row: normalize_min_experience_years(
+                row.get('min_experience_years'),
+                row.get('constraints_seniority_normalized')
+            ),
+            axis=1
+        )
+        
+        # Statistiche
+        original_valid = df['min_experience_years'].notna().sum()
+        print(f"  Valori originali presenti: {original_valid}/{len(df)}")
+        
+        # Distribuzione
+        print(f"  Distribuzione anni richiesti:")
+        for years, count in sorted(df['min_experience_years_normalized'].value_counts().items()):
+            print(f"    {years} anni: {count:3} JD ({count/len(df)*100:.1f}%)")
+        
+        # Verifica coerenza seniority <-> anni
+        print(f"\n  Verifica coerenza seniority ↔ anni:")
+        warnings = []
+        for idx, row in df.iterrows():
+            seniority = row.get('constraints_seniority_normalized', '')
+            min_years = row.get('min_experience_years_normalized', 0)
+            is_consistent, warning = validate_seniority_experience_consistency(seniority, min_years)
+            if not is_consistent:
+                warnings.append((row.get('title', 'N/A'), warning))
+        
+        if warnings:
+            print(f"    ⚠ Trovate {len(warnings)} incongruenze:")
+            for title, warning in warnings[:5]:  # Mostra max 5
+                print(f"      - {title}: {warning}")
+            if len(warnings) > 5:
+                print(f"      ... e altre {len(warnings) - 5}")
+        else:
+            print(f"    ✓ Tutti i valori sono coerenti")
+    else:
+        # Colonna non presente: creala inferendo da seniority
+        print(f"  ⚠ Colonna 'min_experience_years' non trovata nel dataset")
+        print(f"    → Creazione colonna inferita da seniority...")
+        
+        df['min_experience_years_normalized'] = df['constraints_seniority_normalized'].apply(
+            lambda x: SENIORITY_TO_YEARS.get(x, MIN_EXP_YEARS_DEFAULT)
+        )
+        
+        print(f"  Distribuzione anni (inferiti):")
+        for years, count in sorted(df['min_experience_years_normalized'].value_counts().items()):
+            print(f"    {years} anni: {count:3} JD ({count/len(df)*100:.1f}%)")
+    
+    print()
+    # =========================================================================
+
     print("Normalizzazione lingue...")
     df['constraints_languages_normalized'] = df['constraints_languages'].apply(
         lambda x: normalize_languages_string(x, ontology)
@@ -533,4 +669,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
