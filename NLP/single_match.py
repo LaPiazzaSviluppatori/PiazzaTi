@@ -2,7 +2,8 @@
 User CV Matcher - Confronto singolo CV con JD
 Usa la stessa pipeline del reranker aziendale.
 
-AGGIORNAMENTO v0.0.3:
+AGGIORNAMENTO v0.0.4:
+- Pesi aumentati per migliore differenziazione score
 - Integrazione XAI inline (spiegazioni automatiche)
 - Aggiunto campo 'xai' nell'output con top_reasons, main_risks, evidence
 - Aggiunto seniority_details, skills_details, experience_details
@@ -43,19 +44,31 @@ class Config:
         'junior': 1, 'mid': 2, 'senior': 3
     })
     
+    # PESI AGGIORNATI v0.0.4 (×1.5 per migliore differenziazione)
     WEIGHTS: Dict[str, float] = field(default_factory=lambda: {
-        'cosine_similarity_normalized': 0.30,
-        'skill_overlap_core_norm': 0.15,
-        'skill_coverage_total': 0.05,
-        'skill_overlap_nice_norm': 0.05,
-        'experience_meets_requirement': 0.20,
-        'seniority_match': 0.15,
-        'role_similarity_jaccard': 0.05,
-        'role_coherent': 0.05,
-        'must_have_missing': -0.05,
-        'experience_penalty_soft': -0.10,
-        'seniority_mismatch_strong': -0.15,
-        'seniority_underskilled': -0.05,
+        # Similarità semantica
+        'cosine_similarity_normalized': 0.45,    # era 0.30
+
+        # Competenze
+        'skill_overlap_core_norm': 0.30,         # era 0.20 (già modificato da 0.15)
+        'skill_coverage_total': 0.15,            # era 0.10 (già modificato da 0.05)
+        'skill_overlap_nice_norm': 0.075,        # era 0.05
+
+        # Esperienza
+        'experience_meets_requirement': 0.30,    # era 0.20
+
+        # Seniority
+        'seniority_match': 0.075,                # era 0.05 (già modificato da 0.15)
+
+        # Ruolo
+        'role_similarity_jaccard': 0.075,        # era 0.05
+        'role_coherent': 0.075,                  # era 0.05
+
+        # Penalità
+        'must_have_missing': -0.075,             # era -0.05
+        'experience_penalty_soft': -0.15,        # era -0.10
+        'seniority_mismatch_strong': -0.225,     # era -0.15
+        'seniority_underskilled': -0.075,        # era -0.05
     })
     
     EXPERIENCE_GAP_PENALTY_FACTOR: float = 0.1
@@ -768,7 +781,7 @@ def build_json(user_id: str, jd_id: str, features: Dict, score: Dict,
             'protected_category': bool(features.get('tag_protected_category', 0))
         },
         'details': details,
-        'xai': xai  # <-- XAI INTEGRATO
+        'xai': xai
     }
 
     return {
@@ -776,9 +789,9 @@ def build_json(user_id: str, jd_id: str, features: Dict, score: Dict,
             'generated_at': datetime.now().isoformat(),
             'comparison_type': 'user_single_jd',
             'scoring_method': 'linear_weighted_model',
-            'version': '1.3.0',
+            'version': '0.0.4',
             'weights': config.WEIGHTS,
-            'notes': 'v1.3.0: Integrated XAI explanations'
+            'notes': 'v0.0.4: Weights increased x1.5 for better score differentiation'
         },
         'job_description': {'jd_id': jd_id, 'title': jd_title},
         'candidate': candidate,
