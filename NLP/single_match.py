@@ -61,8 +61,8 @@ class Config:
         'seniority_match': 0.075,                # era 0.05 (già modificato da 0.15)
 
         # Ruolo
-        'role_similarity_jaccard': 0.075,        # era 0.05
-        'role_coherent': 0.075,                  # era 0.05
+        'role_similarity_jaccard': 0.10,         # era 0.075
+        'role_coherent': 0.10,                   # era 0.075
 
         # Penalità
         'must_have_missing': -0.075,             # era -0.05
