@@ -2,7 +2,9 @@
 RERANKER - FEATURE ENGINEERING MODULE
 Calcola feature esplicite e interpretabili per il reranking delle coppie CV-JD.
 
-AGGIORNAMENTO v1.1: usa min_experience_years_normalized invece di estrarre anni da requirements
+AGGIORNAMENTO v1.2:
+- Pesi aumentati per migliore differenziazione score
+- usa min_experience_years_normalized invece di estrarre anni da requirements
 """
 
 import pandas as pd
@@ -88,6 +90,13 @@ def get_seniority_numeric(seniority: str, config: Config) -> int:
     return config.SENIORITY_LEVELS.get(str(seniority).lower(), 0)
 
 
+def get_seniority_string(seniority: str) -> str:
+    """Normalizza e restituisce la stringa della seniority."""
+    if pd.isna(seniority) or seniority == '':
+        return 'unknown'
+    return str(seniority).lower().strip()
+
+
 def get_language_level_numeric(level: str, config: Config) -> int:
     if pd.isna(level):
         return 0
@@ -170,28 +179,32 @@ def compute_skills_features(
         jd_requirements = parse_skills_string(jd_req_dict.get(jd_id, ''))
         jd_nice_to_have = parse_skills_string(jd_nice_dict.get(jd_id, ''))
 
-        # Non serve più filtrare "X+ years" perché ora gli anni sono in colonna separata
         jd_requirements = {s for s in jd_requirements if not re.search(r'\d+\+?\s*(years?|anni)', s)}
 
         core_overlap = cv_skills.intersection(jd_requirements)
         nice_overlap = cv_skills.intersection(jd_nice_to_have)
 
+        jd_requirements_count = len(jd_requirements)
+        jd_nice_to_have_count = len(jd_nice_to_have)
+
         skill_overlap_core_abs = len(core_overlap)
-        skill_overlap_core_norm = len(core_overlap) / len(jd_requirements) if jd_requirements else 0.0
+        skill_overlap_core_norm = len(core_overlap) / jd_requirements_count if jd_requirements_count else 0.0
         skill_overlap_nice_abs = len(nice_overlap)
-        skill_overlap_nice_norm = len(nice_overlap) / len(jd_nice_to_have) if jd_nice_to_have else 0.0
+        skill_overlap_nice_norm = len(nice_overlap) / jd_nice_to_have_count if jd_nice_to_have_count else 0.0
 
         all_jd_skills = jd_requirements.union(jd_nice_to_have)
         all_overlap = cv_skills.intersection(all_jd_skills)
         skill_coverage_total = len(all_overlap) / len(all_jd_skills) if all_jd_skills else 0.0
 
-        must_have_missing = len(jd_requirements) - len(core_overlap)
+        must_have_missing = jd_requirements_count - len(core_overlap)
 
         features.append({
             'jd_id': jd_id, 'user_id': user_id,
             'skill_overlap_core_abs': skill_overlap_core_abs,
+            'jd_requirements_count': jd_requirements_count,
             'skill_overlap_core_norm': skill_overlap_core_norm,
             'skill_overlap_nice_abs': skill_overlap_nice_abs,
+            'jd_nice_to_have_count': jd_nice_to_have_count,
             'skill_overlap_nice_norm': skill_overlap_nice_norm,
             'skill_coverage_total': skill_coverage_total,
             'must_have_missing': must_have_missing
@@ -208,14 +221,9 @@ def compute_experience_features(
 ) -> pd.DataFrame:
     """
     Calcola feature relative all'esperienza lavorativa.
-    
-    AGGIORNAMENTO v1.1: ora usa min_experience_years_normalized dalla JD
-    invece di estrarre gli anni dal testo dei requirements con regex.
     """
-    # Dizionario per anni esperienza CV
     cv_years_dict = dict(zip(cv_data['user_id'], cv_data['years_of_experience']))
     
-    # AGGIORNAMENTO: usa min_experience_years_normalized invece di requirements
     if 'min_experience_years_normalized' in jd_data.columns:
         jd_years_dict = dict(zip(jd_data['jd_id'], jd_data['min_experience_years_normalized']))
         print("  [experience] Usando min_experience_years_normalized")
@@ -223,7 +231,6 @@ def compute_experience_features(
         jd_years_dict = dict(zip(jd_data['jd_id'], jd_data['min_experience_years']))
         print("  [experience] Usando min_experience_years (non normalizzato)")
     else:
-        # Fallback legacy: estrai da requirements (per retrocompatibilità)
         print("  [experience] ⚠ Colonna min_experience_years non trovata, usando fallback regex")
         jd_req_dict = dict(zip(jd_data['jd_id'], jd_data['requirements']))
         jd_years_dict = {}
@@ -235,18 +242,14 @@ def compute_experience_features(
     for _, row in reranker_input.iterrows():
         jd_id, user_id = row['jd_id'], row['user_id']
 
-        # Anni di esperienza del candidato (dal CV normalizzato)
         cv_years = cv_years_dict.get(user_id, 0)
         cv_years = float(cv_years) if pd.notna(cv_years) else 0.0
 
-        # Anni minimi richiesti dalla JD (ora da colonna dedicata)
         jd_years = jd_years_dict.get(jd_id, 0)
         jd_years = float(jd_years) if pd.notna(jd_years) else 0.0
 
-        # Gap = CV - JD (positivo se il candidato ha più esperienza)
         experience_gap = cv_years - jd_years
         
-        # Penalità soft proporzionale al gap negativo
         experience_penalty_soft = abs(experience_gap) * config.EXPERIENCE_GAP_PENALTY_FACTOR if experience_gap < 0 else 0.0
 
         features.append({
@@ -276,12 +279,20 @@ def compute_seniority_features(
     for _, row in reranker_input.iterrows():
         jd_id, user_id = row['jd_id'], row['user_id']
 
-        cv_level = get_seniority_numeric(cv_seniority_dict.get(user_id, ''), config)
-        jd_level = get_seniority_numeric(jd_seniority_dict.get(jd_id, ''), config)
+        cv_seniority_raw = cv_seniority_dict.get(user_id, '')
+        jd_seniority_raw = jd_seniority_dict.get(jd_id, '')
+
+        cv_level = get_seniority_numeric(cv_seniority_raw, config)
+        jd_level = get_seniority_numeric(jd_seniority_raw, config)
         seniority_gap = cv_level - jd_level
+
+        cv_seniority_str = get_seniority_string(cv_seniority_raw)
+        jd_seniority_str = get_seniority_string(jd_seniority_raw)
 
         features.append({
             'jd_id': jd_id, 'user_id': user_id,
+            'seniority_cv_str': cv_seniority_str,
+            'seniority_jd_str': jd_seniority_str,
             'seniority_cv_level': cv_level,
             'seniority_jd_level': jd_level,
             'seniority_gap': seniority_gap,
@@ -402,7 +413,6 @@ def build_all_features(config: Config) -> pd.DataFrame:
     print(f"  Rows: {len(all_features)}")
     print(f"  Features: {len(all_features.columns) - 3}")
     
-    # Statistiche esperienza
     meets_req = all_features['experience_meets_requirement'].sum()
     total = len(all_features)
     print(f"\nExperience statistics:")
@@ -524,30 +534,31 @@ class LinearConfig:
     WEIGHTS: dict = None
 
     def __post_init__(self):
+        # PESI AGGIORNATI v1.2 (×1.5 per migliore differenziazione)
         self.WEIGHTS = {
-            # Similarita semantica (peso principale)
-            'cosine_similarity_normalized': 0.30,
+            # Similarità semantica
+            'cosine_similarity_normalized': 0.45,    # era 0.30
 
             # Competenze
-            'skill_overlap_core_norm': 0.15,
-            'skill_coverage_total': 0.05,
-            'skill_overlap_nice_norm': 0.05,
+            'skill_overlap_core_norm': 0.30,         # era 0.20 (già modificato da 0.15)
+            'skill_coverage_total': 0.15,            # era 0.10 (già modificato da 0.05)
+            'skill_overlap_nice_norm': 0.075,        # era 0.05
 
             # Esperienza
-            'experience_meets_requirement': 0.20,
+            'experience_meets_requirement': 0.30,    # era 0.20
 
             # Seniority
-            'seniority_match': 0.15,
+            'seniority_match': 0.075,                # era 0.05 (già modificato da 0.15)
 
             # Ruolo
-            'role_similarity_jaccard': 0.05,
-            'role_coherent': 0.05,
+            'role_similarity_jaccard': 0.10,         # era 0.075
+            'role_coherent': 0.10,                   # era 0.075
 
-            # Penalita
-            'must_have_missing': -0.05,
-            'experience_penalty_soft': -0.10,
-            'seniority_mismatch_strong': -0.15,
-            'seniority_underskilled': -0.05,
+            # Penalità
+            'must_have_missing': -0.075,             # era -0.05
+            'experience_penalty_soft': -0.15,        # era -0.10
+            'seniority_mismatch_strong': -0.225,     # era -0.15
+            'seniority_underskilled': -0.075,        # era -0.05
         }
 
 
@@ -623,6 +634,22 @@ def build_candidate_entry(row: pd.Series, config: LinearConfig) -> dict:
             'gap': round(float(row.get('experience_gap', 0)), 1),
             'meets_requirement': bool(row.get('experience_meets_requirement', 0))
         },
+        'seniority_details': {
+            'cv_seniority': str(row.get('seniority_cv_str', 'unknown')),
+            'required_seniority': str(row.get('seniority_jd_str', 'unknown')),
+            'cv_level': int(row.get('seniority_cv_level', 0)),
+            'required_level': int(row.get('seniority_jd_level', 0)),
+            'gap': int(row.get('seniority_gap', 0)),
+            'match': bool(row.get('seniority_match', 0))
+        },
+        'skills_details': {
+            'cv_skills_matched': int(row.get('skill_overlap_core_abs', 0)),
+            'jd_skills_required': int(row.get('jd_requirements_count', 0)),
+            'match_ratio': round(float(row.get('skill_overlap_core_norm', 0)), 4),
+            'nice_to_have_matched': int(row.get('skill_overlap_nice_abs', 0)),
+            'nice_to_have_total': int(row.get('jd_nice_to_have_count', 0)),
+            'must_have_missing': int(row.get('must_have_missing', 0))
+        },
         'feature_values': feature_values,
         'feature_contributions': feature_contributions,
         'flags': {
@@ -660,9 +687,9 @@ def build_output_json(df: pd.DataFrame, config: LinearConfig) -> dict:
             'total_jds': df['jd_id'].nunique(),
             'total_candidates': len(df),
             'scoring_method': 'linear_weighted_model',
-            'version': '1.1',
+            'version': '1.2',
             'weights': config.WEIGHTS,
-            'notes': 'Experience comparison uses min_experience_years_normalized from JD'
+            'notes': 'v1.2: Weights increased x1.5 for better score differentiation'
         },
         'results': []
     }
@@ -698,7 +725,7 @@ def run_reranker(config: LinearConfig) -> dict:
 def run_full_pipeline():
     """Esegue l'intera pipeline di reranking."""
     print("="*60)
-    print("RERANKER PIPELINE")
+    print("RERANKER PIPELINE v1.2")
     print("="*60)
     
     print("\n[1/3] Feature Engineering")
