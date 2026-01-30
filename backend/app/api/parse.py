@@ -2,10 +2,8 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import Document
 
-from fastapi import Depends
 
-# Router deve essere dichiarato prima di ogni utilizzo
-from fastapi import APIRouter
+from fastapi import Depends, APIRouter, File, UploadFile, Form, HTTPException
 router = APIRouter(prefix="/parse", tags=["parse"])
 
 @router.post("/upload_db")
