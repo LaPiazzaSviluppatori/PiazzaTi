@@ -96,7 +96,7 @@ jobs:
           DATABASE_URL: postgresql://piazzati_user:piazzati_password@localhost:5432/db_piazzati
         run: |
           cd backend
-          pytest tests/ --tb=short --maxfail=5 --disable-warnings > /dev/null 2>&1
+          pytest tests/ --tb=short --maxfail=5 --disable-warnings
 
   build:
     name: Build & Push Image
