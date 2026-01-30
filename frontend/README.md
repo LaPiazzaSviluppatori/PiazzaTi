@@ -1,3 +1,13 @@
+# Prima di una nuova build o push:
+
+Elimina la cartella node_modules e il file package-lock.json per evitare problemi con le dipendenze opzionali (es. rollup su Docker Alpine):
+
+```
+rm -rf node_modules package-lock.json
+npm install
+```
+
+Poi esegui la build o il push.
 # Welcome to your Lovable project
 
 ## Project info

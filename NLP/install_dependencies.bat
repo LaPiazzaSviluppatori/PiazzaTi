@@ -105,6 +105,17 @@ if errorlevel 1 (
 echo [OK] sentence-transformers installato
 echo.
 
+REM Installa pyjwt
+echo [INFO] Installazione pyjwt...
+python -m pip install pyjwt --quiet
+if errorlevel 1 (
+    echo [ERRORE] Impossibile installare pyjwt
+    pause
+    exit /b 1
+)
+echo [OK] pyjwt installato
+echo.
+
 REM ============================================================================
 REM VERIFICA INSTALLAZIONE
 REM ============================================================================

@@ -5,19 +5,23 @@ import { Candidate, Opportunity, JobDescription } from "@/types";
 import { Users, Lightbulb, Briefcase, Plus, ExternalLink, TrendingUp, Calendar } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
+// AGGIUNTA: props per candidato attivo
 interface DiscoverSectionProps {
   suggestedProfiles: Candidate[];
   opportunities: Opportunity[];
   jobDescriptions: JobDescription[];
+  activeCandidate?: Candidate;
   onConnect: (candidateId: string) => void;
   onAddOpportunity: () => void;
   onEvaluateMatch: (jdId: string) => void;
 }
 
-export const DiscoverSection = ({
+export const DiscoverSection = (
+  {
   suggestedProfiles,
   opportunities,
   jobDescriptions,
+  activeCandidate,
   onConnect,
   onAddOpportunity,
   onEvaluateMatch,
@@ -36,6 +40,29 @@ export const DiscoverSection = ({
         return "✨";
     }
   };
+
+  // Calcola i match solo se c'è un candidato attivo
+    let matchedJd: Array<{ jd: JobDescription; score: number; mustRequirements: string[]; niceRequirements: string[] }> = [];
+  if (activeCandidate) {
+    matchedJd = jobDescriptions
+      .map((jd) => {
+        const mustRequirements = Array.isArray(jd.requirements) ? jd.requirements : [];
+        const niceRequirements = Array.isArray(jd.nice_to_have) ? jd.nice_to_have : [];
+        const candidateSkillNames = activeCandidate.skills.map((s) => s.name.toLowerCase());
+        const mustMatch = mustRequirements.filter((req) =>
+          candidateSkillNames.some((skill) => skill.includes(req.toLowerCase()))
+        ).length;
+        const niceMatch = niceRequirements.filter((req) =>
+          candidateSkillNames.some((skill) => skill.includes(req.toLowerCase()))
+        ).length;
+        const mustPercentage = mustRequirements.length > 0 ? (mustMatch / mustRequirements.length) * 100 : 0;
+        const nicePercentage = niceRequirements.length > 0 ? (niceMatch / niceRequirements.length) * 100 : 0;
+        const score = Math.round(mustPercentage * 0.7 + nicePercentage * 0.3);
+        return { jd, score, mustRequirements, niceRequirements };
+      })
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 20);
+  }
 
   return (
     <div className="space-y-6">
@@ -77,32 +104,9 @@ export const DiscoverSection = ({
                 )}
               </div>
 
-              {profile.optInTags.length > 0 && (
-                <div className="flex flex-wrap gap-1 mb-3">
-                  {profile.optInTags.map((tag, i) => (
-                    <Badge key={i} variant="outline" className="text-xs border-success text-success">
-                      {tag.label}
-                    </Badge>
-                  ))}
-                </div>
-              )}
-
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="flex-1"
-                  onClick={() => {
-                    onConnect(profile.id);
-                    toast({ title: "Richiesta inviata", description: `Richiesta di connessione a ${profile.name}` });
-                  }}
-                >
-                  Connetti
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => toast({ title: "Funzione demo" })}>
-                  <TrendingUp className="h-4 w-4" />
-                </Button>
-              </div>
+              <Button size="sm" className="w-full" onClick={() => onConnect(profile.id)}>
+                Connetti
+              </Button>
             </Card>
           ))}
         </div>
@@ -116,100 +120,85 @@ export const DiscoverSection = ({
             Opportunità
           </h3>
           <Button variant="outline" size="sm" onClick={onAddOpportunity}>
-            <Plus className="h-4 w-4 mr-1" />
-            Aggiungi
+            <Plus className="h-4 w-4 mr-1" /> Nuova
           </Button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {opportunities.map((opp) => (
-            <Card key={opp.id} className="p-4 hover:shadow-lg transition-shadow">
-              <div className="flex items-start gap-3 mb-3">
-                <span className="text-2xl">{getOpportunityIcon(opp.type)}</span>
-                <div className="flex-1 min-w-0">
-                  <Badge variant="outline" className="mb-2 text-xs">
-                    {opp.type}
-                  </Badge>
-                  <h4 className="font-semibold">{opp.title}</h4>
-                  <p className="text-xs text-muted-foreground">{opp.organization}</p>
-                </div>
+            <Card key={opp.id} className="p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-xl">{getOpportunityIcon(opp.type)}</span>
+                <span className="font-semibold">{opp.title}</span>
               </div>
-
-              <p className="text-sm text-muted-foreground mb-3 line-clamp-2">{opp.description}</p>
-
+              <p className="text-xs text-muted-foreground mb-2">{opp.organization}</p>
+              <p className="text-sm mb-2">{opp.description}</p>
               {opp.deadline && (
-                <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
-                  <Calendar className="h-3 w-3" />
-                  <span>Scadenza: {opp.deadline}</span>
-                </div>
+                <p className="text-xs text-muted-foreground mb-2">
+                  <Calendar className="inline h-3 w-3 mr-1" />
+                  Scadenza: {opp.deadline}
+                </p>
               )}
-
-              <Button variant="outline" size="sm" className="w-full" onClick={() => toast({ title: "Funzione demo" })}>
-                {opp.link ? (
-                  <>
-                    <ExternalLink className="h-3 w-3 mr-1" />
-                    Visita
-                  </>
-                ) : (
-                  "Info"
-                )}
-              </Button>
+              {opp.link && (
+                <a href={opp.link} target="_blank" rel="noopener noreferrer" className="text-xs text-primary underline flex items-center gap-1">
+                  <ExternalLink className="h-3 w-3" /> Vai al sito
+                </a>
+              )}
             </Card>
           ))}
         </div>
       </Card>
 
-      {/* Proposte di Lavoro */}
-      <Card className="p-6">
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="text-lg font-semibold flex items-center gap-2">
-            <Briefcase className="h-5 w-5 text-primary" />
-            Proposte di Lavoro
-          </h3>
-          <Badge variant="outline">{jobDescriptions.length} posizioni</Badge>
-        </div>
-
-        <div className="space-y-3">
-          {jobDescriptions.map((jd) => (
-            <Card key={jd.id} className="p-4 hover:shadow-lg transition-shadow">
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex-1">
-                  <h4 className="font-semibold">{jd.title}</h4>
-                  <p className="text-sm text-muted-foreground">{jd.company}</p>
-                  <p className="text-sm mt-2 line-clamp-2">{jd.description}</p>
-
-                  <div className="flex flex-wrap gap-2 mt-3">
-                    <Badge variant="outline" className="text-xs">
-                      📍 {jd.location}
-                    </Badge>
-                    {jd.salary && (
-                      <Badge variant="outline" className="text-xs">
-                        💰 {jd.salary}
-                      </Badge>
-                    )}
-                    {jd.requirements.slice(0, 3).map((req, i) => (
-                      <Badge key={i} variant={req.type === "must" ? "default" : "secondary"} className="text-xs">
-                        {req.text}
-                      </Badge>
-                    ))}
-                  </div>
+      {/* JD Top 20 - Lavori a cui posso candidarmi */}
+      {activeCandidate && matchedJd.length > 0 && (
+        <Card className="p-6 mt-6">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-lg font-semibold flex items-center gap-2">
+              <Briefcase className="h-5 w-5 text-primary" />
+              Lavori consigliati per te (Top 20)
+            </h3>
+            <Badge variant="outline">{matchedJd.length} lavori</Badge>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+            {matchedJd.map(({ jd, score, mustRequirements, niceRequirements }) => (
+              <Card key={jd.jd_id} className="p-4 border-2 border-muted shadow-sm">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="inline-flex items-center px-2 py-0.5 rounded bg-muted text-xs font-medium text-muted-foreground mr-2">
+                    <Briefcase className="h-4 w-4 mr-1 inline" /> job
+                  </span>
+                  <span className="ml-auto text-xs font-semibold text-primary">Score match: {score}%</span>
                 </div>
-
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    onEvaluateMatch(jd.id);
-                    toast({ title: "Valutazione match", description: `Analisi compatibilità per "${jd.title}"` });
-                  }}
-                >
-                  Valuta Match
-                </Button>
-              </div>
-            </Card>
-          ))}
-        </div>
-      </Card>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="font-semibold text-base">{jd.title}</span>
+                  {score >= 80 && <span className="ml-2 text-yellow-500 font-bold">★</span>}
+                </div>
+                <div className="text-xs text-muted-foreground mb-1">
+                  {(jd.company || "Azienda")} &middot; {jd.location?.city || ""} {jd.location?.country ? "/ " + jd.location.country : ""} {jd.location?.remote ? ' / Remote' : ''}
+                </div>
+                <div className="w-full bg-muted-foreground/10 rounded h-2 mb-2">
+                  <div className="bg-primary h-2 rounded" style={{ width: `${score}%` }} />
+                </div>
+                <div className="mb-2 text-xs text-muted-foreground line-clamp-2">{jd.description}</div>
+                <div className="mb-2">
+                  <span className="font-semibold text-xs">Requisiti:</span>
+                  <ul className="list-disc ml-4 mt-1">
+                    {mustRequirements.slice(0, 3).map((req, i) => (
+                      <li key={i} className="text-xs text-emerald-700">{req}</li>
+                    ))}
+                    {niceRequirements.slice(0, 2).map((req, i) => (
+                      <li key={i} className="text-xs text-blue-700">{req}</li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="flex gap-2 mt-2">
+                  <Button size="sm" className="flex-1" variant="default">Candidati ora</Button>
+                  <Button size="sm" className="flex-1" variant="outline">Aggiungi ai preferiti</Button>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </Card>
+      )}
     </div>
   );
 };

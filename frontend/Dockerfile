@@ -1,29 +1,29 @@
-# Frontend Dockerfile - Home + Parse App
-FROM node:20-alpine as builder
+## Frontend Dockerfile - Home + Parse App
+FROM node:18-alpine as builder
 
 WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm install
 
-# Copy source and build
 COPY . .
+RUN ls -l public/
 RUN npm run build
+
+# Copia forzata dopo la build, per sicurezza
+RUN cp public/pink_wallpaper.jpg dist/pink_wallpaper.jpg || true
 
 # Production stage - Nginx
 FROM nginx:alpine
 
-# Create the web directory
-RUN mkdir -p /var/www/piazzati
-
-# Copy build output to the correct directory
+# Copia la build React nella root servita da Nginx
 COPY --from=builder /app/dist /var/www/piazzati
 
-# Copy nginx configuration 
+# Copia la configurazione nginx
 COPY nginx/nginx.prod.conf /etc/nginx/conf.d/default.conf
 
-# Create health endpoint
+# Health endpoint
 RUN echo 'OK' > /var/www/piazzati/health
 
 # Health check

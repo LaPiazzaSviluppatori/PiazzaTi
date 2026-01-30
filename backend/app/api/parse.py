@@ -1,3 +1,68 @@
+from sqlalchemy.orm import Session
+from ..database import get_db
+from ..models import Document
+
+from fastapi import Depends
+@router.post("/upload_db")
+async def upload_and_save_cv(
+    file: UploadFile = File(...),
+    user_id: str = Form(...),
+    background: bool = False,
+    db: Session = Depends(get_db),
+):
+    """Upload CV, parse, salva su Postgres, sostituisce il vecchio CV (is_latest)."""
+    if file.content_type not in ("application/pdf",):
+        raise HTTPException(status_code=400, detail="Only PDF uploads are accepted")
+
+    tmp_dir = Path(tempfile.gettempdir()) / "piazzati_parsing"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    dest = tmp_dir / f"upload_{file.filename}_{int(time.time())}.pdf"
+    content = await file.read()
+    dest.write_bytes(content)
+
+    parser = get_parser()
+    doc_parsed = parser.parse(str(dest))
+    parsed_json = doc_parsed.model_dump() if hasattr(doc_parsed, "model_dump") else getattr(doc_parsed, "dict", lambda: {{}})()
+
+    # Sostituisci il vecchio CV (is_latest)
+    from sqlalchemy import and_
+    old_cv = db.query(Document).filter(and_(Document.user_id == user_id, Document.type == 'cv', Document.is_latest == True)).first()
+    if old_cv:
+        old_cv.is_latest = False
+        db.add(old_cv)
+        db.commit()
+
+    # Crea nuovo documento
+    new_doc = Document(
+        id=uuid.uuid4(),
+        user_id=user_id,
+        type='cv',
+        is_latest=True,
+        parsed_json=parsed_json,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+        status='parsed',
+    )
+    db.add(new_doc)
+    db.commit()
+    db.refresh(new_doc)
+
+    return {"message": "CV caricato e salvato", "document_id": str(new_doc.id)}
+
+@router.get("/user/{user_id}/cv/latest")
+def get_latest_cv(user_id: str, db: Session = Depends(get_db)):
+    """Recupera l'ultimo CV (is_latest) per uno user_id."""
+    doc = db.query(Document).filter_by(user_id=user_id, type='cv', is_latest=True).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="CV not found")
+    return {
+        "id": str(doc.id),
+        "user_id": str(doc.user_id),
+        "created_at": doc.created_at,
+        "updated_at": doc.updated_at,
+        "parsed_json": doc.parsed_json,
+        "status": doc.status,
+    }
 import tempfile
 import time
 import uuid
@@ -102,6 +167,13 @@ async def get_task_status(task_id: str):
         raise HTTPException(status_code=404, detail="Task not found")
     
     result = _task_results[task_id].copy()
+    # Assicura che l'id sia sempre presente nella risposta del polling
+    if "result" in result and isinstance(result["result"], dict):
+        if "id" not in result["result"]:
+            # Prova a recuperare user_id da doc o da altri campi
+            user_id = result.get("result", {}).get("user_id") or result.get("user_id")
+            if user_id:
+                result["result"]["id"] = user_id
     
     # Add elapsed time info
     if "started_at" in result:
@@ -259,6 +331,9 @@ if MULTIPART_AVAILABLE:
                         else getattr(doc, "dict", lambda: {})()
                     )
                     
+                    # Assicura che l'id sia sempre presente nei dati parsed
+                    if user_id and isinstance(parsed_data, dict):
+                        parsed_data["id"] = user_id
                     _task_results[task_id] = {
                         "status": "completed",
                         "started_at": _task_results[task_id]["started_at"],
@@ -325,6 +400,9 @@ if MULTIPART_AVAILABLE:
                 )
 
                 # Ensure all values (e.g. datetimes) are JSON-serializable
+                # Assicura che l'id sia sempre presente nei dati parsed
+                if user_id and isinstance(parsed, dict):
+                    parsed["id"] = user_id
                 return JSONResponse(
                     status_code=200,
                     content={"parsed": jsonable_encoder(parsed), "summary": text_summary},

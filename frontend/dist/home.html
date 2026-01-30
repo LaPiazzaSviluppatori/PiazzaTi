@@ -1,13 +1,68 @@
 <!doctype html>
-<html lang="en">
+<html lang="it">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>PiazzaTi — Parser</title>
-    <script type="module" crossorigin src="/assets/index-CBqDu0iZ.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-B7lezRbj.css">
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Piazzati — Home</title>
+    <style>
+      body{font-family:system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial;margin:0;background:#f6f8fa;color:#0b0f13;display:flex;align-items:center;justify-content:center;height:100vh}
+      .card{background:white;padding:32px;border-radius:10px;box-shadow:0 6px 24px rgba(11,15,19,.08);max-width:520px;width:90%;text-align:center}
+      h1{margin:0 0 8px;font-size:24px}
+      p{margin:0 0 18px;color:#556}
+      .buttons{display:flex;gap:12px;justify-content:center}
+        a.button, a.button.alt {
+          display: inline-block;
+          padding: 14px 32px;
+          font-size: 18px;
+          font-weight: 500;
+          border-radius: 6px;
+          text-decoration: none;
+          color: #fff;
+          background: #ff9800;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+          transition: background 0.2s, box-shadow 0.2s;
+          border: none;
+          letter-spacing: 0.5px;
+          cursor: pointer;
+        }
+        a.button:hover, a.button.alt:hover {
+          background: #fb8c00;
+          box-shadow: 0 4px 8px rgba(0,0,0,0.12);
+        }
+      footer{margin-top:16px;font-size:13px;color:#889}
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div class="card">
+      <h1>Piazzati — Pannello</h1>
+      <p>Scegli una destinazione:</p>
+      <div class="buttons">
+        <!-- Link diretto a Grafana sulla porta 3000 -->
+        <a id="grafana-link" class="button" href="#" target="_blank" rel="noopener">Apri Grafana</a>
+        <!-- Link alla pagina di parsing -->
+        <a class="button alt" href="/parse">Vai alla pagina di upload CV</a>
+        <!-- Nuovo bottone per inserire JD -->
+        <a class="button" href="/jd_form.html">Inserisci una Job Description</a>
+      </div>
+      <footer>
+        Grafana: porta 3000 | Parse App: /parse | Backend API: porta 8000
+      </footer>
+    </div>
+    <script>
+      // Link diretto a Grafana sulla porta 3000
+      (function(){
+        try {
+          var link = document.getElementById('grafana-link');
+          if (!link) return;
+          // Usa l'host corrente + porta 3000
+          var grafanaUrl = window.location.protocol + '//' + window.location.hostname + ':3000/';
+          link.href = grafanaUrl;
+        } catch (e) {
+          // fallback
+          var l = document.getElementById('grafana-link'); 
+          if (l) l.href = window.location.hostname + ':3000';
+        }
+      })();
+    </script>
   </body>
 </html>

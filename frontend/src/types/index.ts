@@ -32,6 +32,8 @@ export interface OptInTag {
 export interface Candidate {
   id: string;
   name: string;
+  email?: string;
+  phone?: string;
   location: string;
   summary: string;
   skills: Skill[];
@@ -49,14 +51,39 @@ export interface JobRequirement {
 }
 
 export interface JobDescription {
-  id: string;
+  jd_id: string;
   title: string;
-  company: string;
+  department?: string;
   description: string;
-  requirements: JobRequirement[];
-  salary?: string;
-  location: string;
-  createdAt: string;
+  min_experience_years: number;
+  requirements: string[];
+  nice_to_have?: string[];
+  company?: string; // Nome azienda
+  location: {
+    city?: string;
+    country: string;
+    remote?: boolean;
+  };
+  constraints: {
+    visa?: boolean;
+    relocation?: boolean;
+    seniority: "junior" | "mid" | "senior";
+    languages_min?: { lang: string; level: "A1"|"A2"|"B1"|"B2"|"C1"|"C2" }[];
+  };
+  dei_requirements?: {
+    target_balance?: {
+      gender?: number;
+      underrepresented?: number;
+    };
+  };
+  metadata?: {
+    salary_range?: {
+      min?: number;
+      max?: number;
+      currency?: string;
+    };
+    contract?: string;
+  };
 }
 
 export interface CandidateMatch {

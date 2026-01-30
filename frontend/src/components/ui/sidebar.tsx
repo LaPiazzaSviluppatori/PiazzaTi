@@ -9,8 +9,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { CustomSkeleton } from "../CustomSkeleton";
+import "../CustomSkeleton";
 
 const SIDEBAR_COOKIE_NAME = "sidebar:state";
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
@@ -543,15 +544,12 @@ const SidebarMenuSkeleton = React.forwardRef<
       className={cn("flex h-8 items-center gap-2 rounded-md px-2", className)}
       {...props}
     >
-      {showIcon && <Skeleton className="size-4 rounded-md" data-sidebar="menu-skeleton-icon" />}
-      <Skeleton
-        className="h-4 max-w-[--skeleton-width] flex-1"
+      {showIcon && <CustomSkeleton width={16} height={16} style={{ borderRadius: 4 }} data-sidebar="menu-skeleton-icon" />}
+      <CustomSkeleton
+        height={16}
+        width={width || 80}
+        style={{ borderRadius: 4, maxWidth: width || 80 }}
         data-sidebar="menu-skeleton-text"
-        style={
-          {
-            "--skeleton-width": width,
-          } as React.CSSProperties
-        }
       />
     </div>
   );

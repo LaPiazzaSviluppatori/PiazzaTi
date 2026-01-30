@@ -210,37 +210,78 @@ export const mockCandidates: Candidate[] = [
 
 export const mockJobDescriptions: JobDescription[] = [
   {
-    id: "jd1",
+    jd_id: "jd1",
     title: "Senior Frontend Developer",
-    company: "TechCorp Italia",
+    department: "Engineering",
     description: "Cerchiamo un Senior Frontend Developer per unirsi al nostro team di sviluppo. Lavorerai su progetti innovativi utilizzando le tecnologie più moderne.",
-    requirements: [
-      { text: "React", type: "must" },
-      { text: "TypeScript", type: "must" },
-      { text: "5+ anni esperienza", type: "must" },
-      { text: "UI/UX Design", type: "nice" },
-      { text: "Accessibility", type: "nice" },
-      { text: "Node.js", type: "nice" },
-    ],
-    salary: "45.000 - 65.000 €",
-    location: "Milano (Ibrido)",
-    createdAt: "2025-01-10",
+    min_experience_years: 5,
+    requirements: ["React", "TypeScript", "UI/UX Design", "Accessibility", "Node.js"],
+    nice_to_have: ["Storybook", "Jest", "GraphQL"],
+    location: {
+      city: "Milano",
+      country: "IT",
+      remote: true
+    },
+    constraints: {
+      visa: false,
+      relocation: false,
+      seniority: "senior",
+      languages_min: [
+        { lang: "italian", level: "C1" },
+        { lang: "english", level: "B2" }
+      ]
+    },
+    dei_requirements: {
+      target_balance: {
+        gender: 0.5,
+        underrepresented: 0.2
+      }
+    },
+    metadata: {
+      salary_range: {
+        min: 45000,
+        max: 65000,
+        currency: "EUR"
+      },
+      contract: "full_time"
+    }
   },
   {
-    id: "jd2",
+    jd_id: "jd2",
     title: "Backend Engineer",
-    company: "FinTech Solutions",
+    department: "Engineering",
     description: "Backend Engineer per sviluppo microservizi scalabili in ambiente cloud.",
-    requirements: [
-      { text: "Python o Java", type: "must" },
-      { text: "Microservizi", type: "must" },
-      { text: "Cloud (AWS/Azure)", type: "must" },
-      { text: "Docker", type: "nice" },
-      { text: "Kubernetes", type: "nice" },
-    ],
-    salary: "50.000 - 70.000 €",
-    location: "Roma (Remote)",
-    createdAt: "2025-01-08",
+    min_experience_years: 3,
+    requirements: ["Python", "Microservizi", "Cloud (AWS/Azure)", "Docker", "Kubernetes"],
+    nice_to_have: ["CI/CD", "Terraform"],
+    location: {
+      city: "Roma",
+      country: "IT",
+      remote: true
+    },
+    constraints: {
+      visa: true,
+      relocation: true,
+      seniority: "mid",
+      languages_min: [
+        { lang: "italian", level: "B2" },
+        { lang: "english", level: "B2" }
+      ]
+    },
+    dei_requirements: {
+      target_balance: {
+        gender: 0.4,
+        underrepresented: 0.1
+      }
+    },
+    metadata: {
+      salary_range: {
+        min: 50000,
+        max: 70000,
+        currency: "EUR"
+      },
+      contract: "full_time"
+    }
   },
 ];
 

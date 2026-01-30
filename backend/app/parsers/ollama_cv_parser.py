@@ -970,9 +970,7 @@ DESCRIPTION:"""
         if len(desc) < 50:
             return None
 
-        # Truncate if too long
-        if len(desc) > 500:
-            desc = desc[:497] + "..."
+        # Rimosso limite di lunghezza: la descrizione non viene più troncata
 
         return desc
 

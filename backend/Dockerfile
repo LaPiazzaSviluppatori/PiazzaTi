@@ -33,8 +33,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copia virtual environment dal builder
+
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
+# Fix permessi directory usata dal backend
+RUN mkdir -p /opt/piazzati && chmod -R 777 /opt/piazzati
 
 # Imposta directory di lavoro
 WORKDIR /app
@@ -53,5 +56,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import requests; requests.get('http://localhost:8000/health')" || exit 1
 
 # Comando di avvio ottimizzato per produzione
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4", "--access-log"]
+# Nota: usare un singolo worker garantisce che l'archiviazione in-memory dei task
+# (_task_results) sia consistente. Per multi-worker, usare Redis/DB.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--access-log"]
 

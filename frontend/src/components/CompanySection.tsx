@@ -31,9 +31,22 @@ export const CompanySection = ({
   const [jdForm, setJdForm] = useState({
     title: "",
     company: "",
+    department: "",
     description: "",
-    salary: "",
-    location: "",
+    min_experience_years: "",
+    location_city: "",
+    location_country: "",
+    location_remote: false,
+    constraints_visa: false,
+    constraints_relocation: false,
+    constraints_seniority: "junior",
+    languages_min: "",
+    dei_gender: "",
+    dei_underrepresented: "",
+    salary_min: "",
+    salary_max: "",
+    salary_currency: "",
+    contract: "full_time",
   });
   const [requirements, setRequirements] = useState<{ text: string; type: "must" | "nice" }[]>([]);
   const [newReq, setNewReq] = useState("");
@@ -95,13 +108,82 @@ export const CompanySection = ({
       return;
     }
 
-    onCreateJd({
-      ...jdForm,
-      requirements,
-    });
+    // Serializza i dati del form in uno schema JD coerente
+    // Cast seniority in modo typesafe
+    const allowedSeniorities = ["junior", "mid", "senior"] as const;
+    const seniority = allowedSeniorities.includes(jdForm.constraints_seniority as typeof allowedSeniorities[number])
+      ? jdForm.constraints_seniority as "junior" | "mid" | "senior"
+      : "junior";
+
+    const allowedLevels = ["A1","A2","B1","B2","C1","C2"] as const;
+    const languages_min = (jdForm.languages_min || "").split(",").map(s => {
+      const [lang, level] = s.split(":");
+      const lvl = level ? level.trim().toUpperCase() : undefined;
+      if (lang && lvl && allowedLevels.includes(lvl as typeof allowedLevels[number])) {
+        return { lang: lang.trim(), level: lvl as typeof allowedLevels[number] };
+      }
+      return null;
+    }).filter(Boolean) as { lang: string; level: "A1"|"A2"|"B1"|"B2"|"C1"|"C2" }[];
+
+    const jdData = {
+      jd_id: "", // placeholder, sarà gestito dal backend
+      title: jdForm.title,
+      company: jdForm.company,
+      department: jdForm.department,
+      description: jdForm.description,
+      min_experience_years: Number(jdForm.min_experience_years) || 0,
+      requirements: requirements.filter(r => r.type === "must").map(r => r.text),
+      nice_to_have: requirements.filter(r => r.type === "nice").map(r => r.text),
+      location: {
+        city: jdForm.location_city,
+        country: jdForm.location_country,
+        remote: !!jdForm.location_remote,
+      },
+      constraints: {
+        visa: !!jdForm.constraints_visa,
+        relocation: !!jdForm.constraints_relocation,
+        seniority,
+        languages_min,
+      },
+      dei_requirements: {
+        target_balance: {
+          gender: jdForm.dei_gender ? Number(jdForm.dei_gender) : undefined,
+          underrepresented: jdForm.dei_underrepresented ? Number(jdForm.dei_underrepresented) : undefined,
+        },
+      },
+      metadata: {
+        salary_range: {
+          min: jdForm.salary_min ? Number(jdForm.salary_min) : undefined,
+          max: jdForm.salary_max ? Number(jdForm.salary_max) : undefined,
+          currency: jdForm.salary_currency,
+        },
+        contract: jdForm.contract,
+      },
+    };
+
+    onCreateJd(jdData);
 
     // Reset form
-    setJdForm({ title: "", company: "", description: "", salary: "", location: "" });
+    setJdForm({
+      title: "",
+      company: "",
+      department: "",
+      description: "",
+      min_experience_years: "",
+      location_city: "",
+      location_country: "",
+      location_remote: false,
+      constraints_visa: false,
+      constraints_relocation: false,
+      constraints_seniority: "junior",
+      languages_min: "",
+      dei_gender: "",
+      dei_underrepresented: "",
+      salary_min: "",
+      salary_max: "",
+      salary_currency: "",
+      contract: "full_time",
+    });
     setRequirements([]);
 
     toast({
@@ -149,56 +231,100 @@ export const CompanySection = ({
           Crea Job Description
         </h3>
 
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label htmlFor="title">Titolo Posizione *</Label>
-            <Input
-              id="title"
-              value={jdForm.title}
-              onChange={(e) => setJdForm({ ...jdForm, title: e.target.value })}
-              placeholder="es. Senior Frontend Developer"
-            />
+            <Input id="title" value={jdForm.title} onChange={e => setJdForm({ ...jdForm, title: e.target.value })} placeholder="es. Senior Frontend Developer" />
           </div>
-
           <div className="space-y-2">
             <Label htmlFor="company">Azienda *</Label>
-            <Input
-              id="company"
-              value={jdForm.company}
-              onChange={(e) => setJdForm({ ...jdForm, company: e.target.value })}
-              placeholder="es. TechCorp Italia"
-            />
+            <Input id="company" value={jdForm.company} onChange={e => setJdForm({ ...jdForm, company: e.target.value })} placeholder="es. TechCorp Italia" />
           </div>
-
+          <div className="space-y-2">
+            <Label htmlFor="department">Dipartimento</Label>
+            <Input id="department" value={jdForm.department || ""} onChange={e => setJdForm({ ...jdForm, department: e.target.value })} placeholder="es. R&D" />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="min_experience_years">Esperienza minima (anni) *</Label>
+            <Input id="min_experience_years" type="number" min={0} value={jdForm.min_experience_years || ""} onChange={e => setJdForm({ ...jdForm, min_experience_years: e.target.value })} placeholder="es. 3" />
+          </div>
           <div className="space-y-2 md:col-span-2">
-            <Label htmlFor="description">Descrizione</Label>
-            <Textarea
-              id="description"
-              value={jdForm.description}
-              onChange={(e) => setJdForm({ ...jdForm, description: e.target.value })}
-              placeholder="Descrivi la posizione, il team e le responsabilità..."
-              rows={3}
-            />
+            <Label htmlFor="description">Descrizione *</Label>
+            <Textarea id="description" value={jdForm.description} onChange={e => setJdForm({ ...jdForm, description: e.target.value })} placeholder="Descrivi la posizione, il team e le responsabilità..." rows={3} />
           </div>
-
+          {/* Location */}
           <div className="space-y-2">
-            <Label htmlFor="salary">Salary Range</Label>
-            <Input
-              id="salary"
-              value={jdForm.salary}
-              onChange={(e) => setJdForm({ ...jdForm, salary: e.target.value })}
-              placeholder="es. 45.000 - 65.000 €"
-            />
+            <Label htmlFor="location_city">Città</Label>
+            <Input id="location_city" value={jdForm.location_city || ""} onChange={e => setJdForm({ ...jdForm, location_city: e.target.value })} placeholder="es. Milano" />
           </div>
-
           <div className="space-y-2">
-            <Label htmlFor="location">Location</Label>
-            <Input
-              id="location"
-              value={jdForm.location}
-              onChange={(e) => setJdForm({ ...jdForm, location: e.target.value })}
-              placeholder="es. Milano (Ibrido)"
-            />
+            <Label htmlFor="location_country">Paese *</Label>
+            <Input id="location_country" value={jdForm.location_country || ""} onChange={e => setJdForm({ ...jdForm, location_country: e.target.value })} placeholder="es. IT" />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="location_remote">Remote</Label>
+            <input id="location_remote" type="checkbox" checked={jdForm.location_remote || false} onChange={e => setJdForm({ ...jdForm, location_remote: e.target.checked })} />
+          </div>
+          {/* Constraints */}
+          <div className="space-y-2">
+            <Label htmlFor="constraints_visa">Visto richiesto</Label>
+            <input id="constraints_visa" type="checkbox" checked={jdForm.constraints_visa || false} onChange={e => setJdForm({ ...jdForm, constraints_visa: e.target.checked })} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="constraints_relocation">Disponibilità trasferimento</Label>
+            <input id="constraints_relocation" type="checkbox" checked={jdForm.constraints_relocation || false} onChange={e => setJdForm({ ...jdForm, constraints_relocation: e.target.checked })} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="constraints_seniority">Seniority *</Label>
+            <Select value={jdForm.constraints_seniority || "junior"} onValueChange={v => setJdForm({ ...jdForm, constraints_seniority: v })}>
+              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="junior">Junior</SelectItem>
+                <SelectItem value="mid">Mid</SelectItem>
+                <SelectItem value="senior">Senior</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {/* Languages min */}
+          <div className="space-y-2 md:col-span-2">
+            <Label>Lingue minime richieste</Label>
+            {/* Qui puoi aggiungere un array di lingue con livello, per semplicità solo un campo */}
+            <Input id="languages_min" value={jdForm.languages_min || ""} onChange={e => setJdForm({ ...jdForm, languages_min: e.target.value })} placeholder="es. english:B2, italian:C1" />
+          </div>
+          {/* DEI requirements */}
+          <div className="space-y-2">
+            <Label htmlFor="dei_gender">Target genere (%)</Label>
+            <Input id="dei_gender" type="number" min={0} max={1} step={0.01} value={jdForm.dei_gender || ""} onChange={e => setJdForm({ ...jdForm, dei_gender: e.target.value })} placeholder="es. 0.5" />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="dei_underrepresented">Target underrepresented (%)</Label>
+            <Input id="dei_underrepresented" type="number" min={0} max={1} step={0.01} value={jdForm.dei_underrepresented || ""} onChange={e => setJdForm({ ...jdForm, dei_underrepresented: e.target.value })} placeholder="es. 0.2" />
+          </div>
+          {/* Metadata */}
+          <div className="space-y-2">
+            <Label htmlFor="salary_min">RAL Minima</Label>
+            <Input id="salary_min" type="number" min={0} value={jdForm.salary_min || ""} onChange={e => setJdForm({ ...jdForm, salary_min: e.target.value })} placeholder="es. 35000" />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="salary_max">RAL Massima</Label>
+            <Input id="salary_max" type="number" min={0} value={jdForm.salary_max || ""} onChange={e => setJdForm({ ...jdForm, salary_max: e.target.value })} placeholder="es. 55000" />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="salary_currency">Valuta</Label>
+            <Input id="salary_currency" value={jdForm.salary_currency || ""} onChange={e => setJdForm({ ...jdForm, salary_currency: e.target.value })} placeholder="es. EUR" />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="contract">Tipo contratto</Label>
+            <Select value={jdForm.contract || "full_time"} onValueChange={v => setJdForm({ ...jdForm, contract: v })}>
+              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="full_time">Full Time</SelectItem>
+                <SelectItem value="part_time">Part Time</SelectItem>
+                <SelectItem value="internship">Internship</SelectItem>
+                <SelectItem value="consultant">Consultant</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
 

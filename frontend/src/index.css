@@ -2,9 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
-*/
+/* ================================
+   Design system: colori e variabili
+   Tutti i colori in HSL
+================================= */
 
 @layer base {
   :root {
@@ -17,7 +18,7 @@ All colors MUST be HSL.
     --popover: 0 0% 100%;
     --popover-foreground: 0 0% 10%;
 
-    --primary: 210 100% 50%;
+    --primary: 330 100% 35%;
     --primary-foreground: 0 0% 100%;
 
     --secondary: 210 20% 96%;
@@ -26,7 +27,7 @@ All colors MUST be HSL.
     --muted: 210 15% 95%;
     --muted-foreground: 0 0% 45%;
 
-    --accent: 210 100% 50%;
+    --accent: 330 70% 45%;
     --accent-foreground: 0 0% 100%;
 
     --success: 142 76% 36%;
@@ -40,25 +41,22 @@ All colors MUST be HSL.
 
     --border: 210 20% 90%;
     --input: 210 20% 90%;
-    --ring: 210 100% 50%;
+    --ring: 330 100% 35%;
 
     --radius: 0.75rem;
 
     --sidebar-background: 0 0% 98%;
-
     --sidebar-foreground: 240 5.3% 26.1%;
-
     --sidebar-primary: 240 5.9% 10%;
-
     --sidebar-primary-foreground: 0 0% 98%;
-
     --sidebar-accent: 240 4.8% 95.9%;
-
     --sidebar-accent-foreground: 240 5.9% 10%;
-
     --sidebar-border: 220 13% 91%;
-
     --sidebar-ring: 217.2 91.2% 59.8%;
+
+    /* Variabili shimmer */
+    --skeleton-base: 0 0% 85%;
+    --highlight: rgba(255, 255, 255, 0.35); /* FIX: alpha funzionante */
   }
 
   .dark {
@@ -71,7 +69,7 @@ All colors MUST be HSL.
     --popover: 0 0% 15%;
     --popover-foreground: 0 0% 98%;
 
-    --primary: 210 100% 50%;
+    --primary: 330 100% 35%;
     --primary-foreground: 0 0% 100%;
 
     --secondary: 0 0% 20%;
@@ -80,7 +78,7 @@ All colors MUST be HSL.
     --muted: 0 0% 20%;
     --muted-foreground: 0 0% 65%;
 
-    --accent: 210 100% 50%;
+    --accent: 330 70% 45%;
     --accent-foreground: 0 0% 100%;
 
     --success: 142 76% 36%;
@@ -94,16 +92,150 @@ All colors MUST be HSL.
 
     --border: 0 0% 25%;
     --input: 0 0% 25%;
-    --ring: 210 100% 50%;
+    --ring: 330 100% 35%;
   }
 }
 
 @layer base {
+  /* Rimosse direttive @apply per evitare errori di compilazione se Tailwind non processa i CSS globali */
   * {
-    @apply border-border;
+    border-color: hsl(var(--border));
   }
 
   body {
-    @apply bg-background text-foreground;
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+  }
+}
+
+/* ================================
+   Buttons e tab attivi
+================================= */
+
+@layer components {
+  button:active {
+    background-color: hsl(var(--primary)) !important;
+    color: hsl(var(--primary-foreground)) !important;
+    border-color: hsl(var(--primary)) !important;
+    filter: brightness(0.95);
+  }
+  button:hover {
+    background-color: hsl(var(--primary)) !important;
+    color: hsl(var(--primary-foreground)) !important;
+    border-color: hsl(var(--primary)) !important;
+  }
+  button:focus,
+  button:focus-visible {
+    background-color: hsl(var(--primary)) !important;
+    color: hsl(var(--primary-foreground)) !important;
+    border-color: hsl(var(--primary)) !important;
+    outline: none;
+    box-shadow: 0 0 0 2px hsl(var(--ring) / 0.4);
+  }
+
+  /* Active tabs */
+  button[data-state="active"],
+  [role="tab"][data-state="active"],
+  [role="tab"][data-state="active"]:hover,
+  [role="tab"][data-state="active"]:focus,
+  [role="tab"][data-state="active"]:focus-visible,
+  [role="tab"][data-state="active"]:active,
+  .role-trigger[role="tab"][data-state="active"],
+  .role-trigger[role="tab"][data-state="active"]:hover,
+  .role-trigger[role="tab"][data-state="active"]:focus,
+  .role-trigger[role="tab"][data-state="active"]:focus-visible,
+  .role-trigger[role="tab"][data-state="active"]:active {
+    background-color: hsl(var(--primary)) !important;
+    color: hsl(var(--primary-foreground)) !important;
+    border-color: hsl(var(--primary)) !important;
+  }
+}
+
+/* ================================
+   Global shimmer (YouTube-like)
+================================= */
+
+.yt-shimmer {
+  position: relative;
+  overflow: hidden;
+  background: hsl(0 0% 100% / 0.06);
+}
+
+.yt-shimmer::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  background: linear-gradient(
+    0deg,
+    hsl(0 0% 100% / 0.78) 0%,
+    hsl(0 0% 100% / 0.86) 100%
+  );
+  backdrop-filter: blur(1.6px) saturate(100%);
+}
+
+.yt-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-150%);
+  pointer-events: none;
+  z-index: 3;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    hsl(var(--primary) / 0.22) 50%,
+    transparent 100%
+  );
+  animation: yt-shimmer-move 2s ease-in-out infinite;
+}
+
+.yt-shimmer > * {
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes yt-shimmer-move {
+  0% { transform: translateX(-150%); }
+  60% { transform: translateX(100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* ================================
+   React Loading Skeleton shimmer
+================================= */
+
+.react-loading-skeleton {
+  position: relative !important;
+  overflow: hidden !important;
+  border-radius: 8px !important;
+  min-height: 1.2em !important;
+  background: hsl(var(--skeleton-base)) !important;
+  box-shadow: 0 0 0 1px hsl(var(--primary) / 0.10) inset !important;
+  isolation: isolate !important; /* FIX OVERLAP */
+  --highlight: rgba(255, 0, 0, 0.55); /* TEST: rosso visibile */
+}
+
+.react-loading-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--highlight) 50%,
+    transparent 100%
+  );
+  transform: translateX(-150%);
+  animation: skeleton-shimmer 1.2s linear infinite;
+  pointer-events: none !important;
+  z-index: 9999 !important;
+  will-change: transform;
+}
+
+@keyframes skeleton-shimmer {
+  100% {
+    transform: translateX(150%);
   }
 }
