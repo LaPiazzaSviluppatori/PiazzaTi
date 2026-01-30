@@ -3,6 +3,11 @@ from ..database import get_db
 from ..models import Document
 
 from fastapi import Depends
+
+# Router deve essere dichiarato prima di ogni utilizzo
+from fastapi import APIRouter
+router = APIRouter(prefix="/parse", tags=["parse"])
+
 @router.post("/upload_db")
 async def upload_and_save_cv(
     file: UploadFile = File(...),
