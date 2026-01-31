@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import LandingPage from "./LandingPage";
+// import LandingPage from "./LandingPage";
 import Header from "@/components/Header";
 import { CandidateSection } from "@/components/CandidateSection";
 import { CompanySection } from "@/components/CompanySection";
@@ -143,9 +143,7 @@ const Index = () => {
     return candidates.filter((c) => c.id !== currentCandidate?.id);
   }, [candidates, currentCandidate]);
 
-  if (showLanding) {
-    return <LandingPage />;
-  }
+  // Mostra direttamente login/dashboard, niente landing page
 
   // Skill add logic (deduplica e sovrascrive)
   const handleAddSkill = (skillName: string) => {
