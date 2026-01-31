@@ -102,8 +102,6 @@ services:
   piazzati-frontend:
     build: ./frontend
     container_name: piazzati-frontend
-    ports:
-      - "80:80"
     depends_on:
       piazzati-backend:
         condition: service_healthy
