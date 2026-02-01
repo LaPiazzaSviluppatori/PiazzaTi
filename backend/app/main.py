@@ -49,6 +49,7 @@ class Token(BaseModel):
 def login_for_access_token(
     username: str = Form(...),
     password: str = Form(...),
+    role: str = Form(...),
     db: Session = Depends(get_db),
 ):
     user = authenticate_user(db, username, password)
@@ -57,6 +58,11 @@ def login_for_access_token(
             status_code=status.HTTP_401_UNAUTHORIZED,
             content={"detail": "Incorrect username or password"},
             headers={"WWW-Authenticate": "Bearer"},
+        )
+    if user.role != role:
+        return JSONResponse(
+            status_code=status.HTTP_403_FORBIDDEN,
+            content={"detail": "Utente non esistente in questo ruolo, sicuro?"},
         )
     access_token = create_access_token(data={"sub": str(user.id)})
     return {"access_token": access_token, "token_type": "bearer"}

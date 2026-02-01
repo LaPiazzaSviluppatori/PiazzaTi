@@ -479,6 +479,7 @@ const Index = () => {
         body: new URLSearchParams({
           username: loginEmail,
           password: loginPassword,
+          role: selectedRole,
         }),
       });
       if (!res.ok) {
