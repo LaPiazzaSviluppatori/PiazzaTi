@@ -482,8 +482,15 @@ const Index = () => {
         }),
       });
       if (!res.ok) {
-        const err = await res.json();
-        toast({ title: "Login fallito", description: err.detail || "Credenziali errate", variant: "destructive" });
+        let errorMsg = "Credenziali errate o utente inesistente";
+        try {
+          const err = await res.json();
+          errorMsg = err.detail || errorMsg;
+        } catch {
+          const text = await res.text();
+          errorMsg = text || errorMsg;
+        }
+        toast({ title: "Login fallito", description: errorMsg, variant: "destructive" });
         return;
       }
       const data = await res.json();
