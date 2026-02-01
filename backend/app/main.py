@@ -1,5 +1,8 @@
 import os
 from fastapi import Depends, FastAPI, HTTPException, status, Form, Request
+from fastapi.responses import JSONResponse
+from fastapi.exception_handlers import RequestValidationError
+from fastapi.exceptions import RequestValidationError as FastAPIRequestValidationError
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
@@ -19,6 +22,22 @@ from opentelemetry.instrumentation.psycopg2 import Psycopg2Instrumentor
 from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 
 app = FastAPI(title="PiazzaTi Backend", version="1.0.0")
+
+# Handler globale per errori: restituisce sempre JSON
+@app.exception_handler(Exception)
+async def generic_exception_handler(request: Request, exc: Exception):
+    return JSONResponse(
+        status_code=500,
+        content={"detail": str(exc)}
+    )
+
+# Handler per errori di validazione
+@app.exception_handler(FastAPIRequestValidationError)
+async def validation_exception_handler(request: Request, exc: FastAPIRequestValidationError):
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors()}
+    )
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 # Endpoint per login: /auth/token
@@ -34,9 +53,9 @@ def login_for_access_token(
 ):
     user = authenticate_user(db, username, password)
     if not user:
-        raise HTTPException(
+        return JSONResponse(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
+            content={"detail": "Incorrect username or password"},
             headers={"WWW-Authenticate": "Bearer"},
         )
     access_token = create_access_token(data={"sub": str(user.id)})
