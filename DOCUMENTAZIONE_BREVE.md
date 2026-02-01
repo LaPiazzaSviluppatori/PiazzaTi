@@ -32,6 +32,7 @@ PiazzaTi è una piattaforma web per la gestione, presentazione e matching tra ca
 ---
 
 ## Chiamate Principali (API)
+- `POST /auth/register` – Registrazione utente (email, password, nome, ruolo). Password hashata e validazione email.
 - `POST /auth/token` – Login utente (JWT).
 - `POST /api/parse/upload` – Upload e parsing CV (risposta immediata o asincrona con polling).
 - `GET /api/parse/task/{task_id}` – Stato parsing CV (se asincrono).
@@ -67,6 +68,7 @@ PiazzaTi è una piattaforma web per la gestione, presentazione e matching tra ca
 
 ## Note Tecniche e Sicurezza
 - Autenticazione JWT, gestione ruoli lato frontend e backend.
+- Registrazione sicura: password hashata, validazione email tramite email-validator (Pydantic).
 - Parsing CV robusto, con polling asincrono e feedback di avanzamento.
 - Audit log per tracciamento azioni sensibili.
 - Modalità DEI (Diversity, Equity, Inclusion) opzionale per aziende.

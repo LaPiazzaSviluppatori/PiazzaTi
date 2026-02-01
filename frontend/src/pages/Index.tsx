@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import RegisterForm from "@/components/RegisterForm";
 // import LandingPage from "./LandingPage";
 import Header from "@/components/Header";
 import { CandidateSection } from "@/components/CandidateSection";
@@ -58,7 +59,6 @@ import "../components/custom-skeleton.css";
 import type { Experience } from "@/types";
 
 const Index = () => {
-  // ...existing code...
   const [showLanding, setShowLanding] = useState(true);
   const [deiMode, setDeiMode] = useState(true);
   const [activeTab, setActiveTab] = useState("candidate");
@@ -67,6 +67,50 @@ const Index = () => {
   const [loginPassword, setLoginPassword] = useState("");
   const [selectedRole, setSelectedRole] = useState<"candidate" | "company">("candidate");
   const [jwtToken, setJwtToken] = useState<string | null>(() => localStorage.getItem("piazzati:jwtToken"));
+  const [showRegister, setShowRegister] = useState(false);
+  const [registerRole, setRegisterRole] = useState<"candidate" | "company">("candidate");
+
+  // Funzione di registrazione collegata al RegisterForm
+  type CandidateRegisterData = {
+    email: string;
+    password: string;
+    name: string;
+    surname: string;
+    city: string;
+    region: string;
+    country: string;
+  };
+  type CompanyRegisterData = {
+    email: string;
+    password: string;
+    name: string;
+    surname: string;
+    companyName: string;
+    city: string;
+    region: string;
+    country: string;
+  };
+  type RegisterData = CandidateRegisterData | CompanyRegisterData;
+
+  const handleRegister = async (data: RegisterData) => {
+    try {
+      const res = await fetch("/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...data, role: registerRole }),
+      });
+      if (res.ok) {
+        toast({ title: "Registrazione completata", description: "Ora puoi accedere!" });
+        setShowRegister(false);
+        setSelectedRole(registerRole);
+      } else {
+        const err = await res.json();
+        toast({ title: "Errore registrazione", description: err.detail || "Registrazione fallita", variant: "destructive" });
+      }
+    } catch (err) {
+      toast({ title: "Errore di rete", description: String(err), variant: "destructive" });
+    }
+  };
 
   // Parsing state centralizzato
   const [isParsing, setIsParsing] = useState(false);
@@ -491,42 +535,62 @@ const Index = () => {
       )}
       <main className="container mx-auto px-4 py-8">
         {!authRole ? (
-          <div className="min-h-[80vh] flex items-center justify-center">
-            <div className="max-w-md w-full bg-white/80 rounded-lg shadow p-8 flex flex-col gap-6">
-              <h2 className="text-2xl font-bold mb-2 uppercase tracking-wide text-center">ACCEDI</h2>
-              <div className="flex flex-row gap-3 mb-4 justify-center items-center">
-                <button
-                  className={`w-32 px-4 py-2 rounded-full border text-base font-semibold uppercase tracking-wide transition-colors duration-150 ${selectedRole === "candidate" ? "bg-primary text-primary-foreground" : "bg-muted"}`}
-                  style={{ borderRadius: "2rem" }}
-                  onClick={() => setSelectedRole("candidate")}
-                >CANDIDATO</button>
-                <button
-                  className={`w-32 px-4 py-2 rounded-full border text-base font-semibold uppercase tracking-wide transition-colors duration-150 ${selectedRole === "company" ? "bg-primary text-primary-foreground" : "bg-muted"}`}
-                  style={{ borderRadius: "2rem" }}
-                  onClick={() => setSelectedRole("company")}
-                >AZIENDA</button>
+          showRegister ? (
+            <div className="min-h-[80vh] flex items-center justify-center">
+              <div className="max-w-md w-full bg-white/80 rounded-lg shadow p-8 flex flex-col gap-6">
+                <h2 className="text-2xl font-bold mb-2 uppercase tracking-wide text-center">REGISTRAZIONE</h2>
+                <RegisterForm
+                  role={registerRole}
+                  onRegister={handleRegister}
+                  onSwitchRole={setRegisterRole}
+                />
+                <div className="text-center mt-2">
+                  <button className="text-primary underline" onClick={() => setShowRegister(false)}>Hai già un account? Accedi</button>
+                </div>
               </div>
-              <input
-                type="email"
-                placeholder="Email"
-                value={loginEmail}
-                onChange={e => setLoginEmail(e.target.value)}
-                className="mb-2 px-3 py-2 border rounded w-full"
-              />
-              <input
-                type="password"
-                placeholder="Password"
-                value={loginPassword}
-                onChange={e => setLoginPassword(e.target.value)}
-                className="mb-4 px-3 py-2 border rounded w-full"
-              />
-              <button
-                className="w-full bg-primary text-primary-foreground py-3 rounded-full font-semibold text-lg transition-colors duration-150"
-                style={{ borderRadius: "2rem" }}
-                onClick={handleLogin}
-              >Accedi come {selectedRole === "candidate" ? "Candidato" : "Azienda"}</button>
             </div>
-          </div>
+          ) : (
+            <div className="min-h-[80vh] flex items-center justify-center">
+              <div className="max-w-md w-full bg-white/80 rounded-lg shadow p-8 flex flex-col gap-6">
+                <h2 className="text-2xl font-bold mb-2 uppercase tracking-wide text-center">ACCEDI</h2>
+                <div className="flex flex-row gap-3 mb-4 justify-center items-center">
+                  <button
+                    className={`w-32 px-4 py-2 rounded-full border text-base font-semibold uppercase tracking-wide transition-colors duration-150 ${selectedRole === "candidate" ? "bg-primary text-primary-foreground" : "bg-muted"}`}
+                    style={{ borderRadius: "2rem" }}
+                    onClick={() => setSelectedRole("candidate")}
+                  >CANDIDATO</button>
+                  <button
+                    className={`w-32 px-4 py-2 rounded-full border text-base font-semibold uppercase tracking-wide transition-colors duration-150 ${selectedRole === "company" ? "bg-primary text-primary-foreground" : "bg-muted"}`}
+                    style={{ borderRadius: "2rem" }}
+                    onClick={() => setSelectedRole("company")}
+                  >AZIENDA</button>
+                </div>
+                <input
+                  type="email"
+                  placeholder="Email"
+                  value={loginEmail}
+                  onChange={e => setLoginEmail(e.target.value)}
+                  className="mb-2 px-3 py-2 border rounded w-full"
+                />
+                <input
+                  type="password"
+                  placeholder="Password"
+                  value={loginPassword}
+                  onChange={e => setLoginPassword(e.target.value)}
+                  className="mb-4 px-3 py-2 border rounded w-full"
+                />
+                <button
+                  className="w-full bg-primary text-primary-foreground py-3 rounded-full font-semibold text-lg transition-colors duration-150"
+                  style={{ borderRadius: "2rem" }}
+                  onClick={handleLogin}
+                >Accedi come {selectedRole === "candidate" ? "Candidato" : "Azienda"}</button>
+                <div className="text-center mt-2">
+                  <span>Non hai un account? </span>
+                  <button className="text-primary underline" onClick={() => { setShowRegister(true); setRegisterRole(selectedRole); }}>Registrati</button>
+                </div>
+              </div>
+            </div>
+          )
         ) : (
           <Tabs
             value={activeTab}
@@ -655,6 +719,7 @@ const Index = () => {
                     }
                   }
                 }}
+                role={authRole ?? "candidate"}
               />
             </TabsContent>
           </Tabs>

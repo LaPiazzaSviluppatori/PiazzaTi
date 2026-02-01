@@ -2,6 +2,8 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Candidate, Opportunity, JobDescription } from "@/types";
+
+type UserRole = "candidate" | "company";
 import { Users, Lightbulb, Briefcase, Plus, ExternalLink, TrendingUp, Calendar } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
@@ -14,10 +16,10 @@ interface DiscoverSectionProps {
   onConnect: (candidateId: string) => void;
   onAddOpportunity: () => void;
   onEvaluateMatch: (jdId: string) => void;
+  role: UserRole;
 }
 
-export const DiscoverSection = (
-  {
+export const DiscoverSection = ({
   suggestedProfiles,
   opportunities,
   jobDescriptions,
@@ -25,6 +27,7 @@ export const DiscoverSection = (
   onConnect,
   onAddOpportunity,
   onEvaluateMatch,
+  role,
 }: DiscoverSectionProps) => {
   const getOpportunityIcon = (type: string) => {
     switch (type) {
@@ -66,53 +69,51 @@ export const DiscoverSection = (
 
   return (
     <div className="space-y-6">
-      {/* Profili Consigliati */}
-      <Card className="p-6">
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="text-lg font-semibold flex items-center gap-2">
-            <Users className="h-5 w-5 text-primary" />
-            Profili Consigliati
-          </h3>
-          <Badge variant="outline">{suggestedProfiles.length} profili</Badge>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {suggestedProfiles.map((profile) => (
-            <Card key={profile.id} className="p-4 hover:shadow-lg transition-shadow">
-              <div className="flex items-start gap-3 mb-3">
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground flex-shrink-0">
-                  {profile.name.split(" ").map((n) => n[0]).join("")}
+      {/* Se azienda: mostra profili candidati */}
+      {role === "company" && (
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-lg font-semibold flex items-center gap-2">
+              <Users className="h-5 w-5 text-primary" />
+              Profili Consigliati
+            </h3>
+            <Badge variant="outline">{suggestedProfiles.length} profili</Badge>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {suggestedProfiles.map((profile) => (
+              <Card key={profile.id} className="p-4 hover:shadow-lg transition-shadow">
+                <div className="flex items-start gap-3 mb-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground flex-shrink-0">
+                    {profile.name.split(" ").map((n) => n[0]).join("")}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold truncate">{profile.name}</p>
+                    <p className="text-xs text-muted-foreground truncate">{profile.location}</p>
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold truncate">{profile.name}</p>
-                  <p className="text-xs text-muted-foreground truncate">{profile.location}</p>
+                <p className="text-sm text-muted-foreground mb-3 line-clamp-2">{profile.summary}</p>
+                <div className="flex flex-wrap gap-1 mb-3">
+                  {profile.skills.slice(0, 4).map((skill, i) => (
+                    <Badge key={i} variant="secondary" className="text-xs">
+                      {skill.name}
+                    </Badge>
+                  ))}
+                  {profile.skills.length > 4 && (
+                    <Badge variant="outline" className="text-xs">
+                      +{profile.skills.length - 4}
+                    </Badge>
+                  )}
                 </div>
-              </div>
+                <Button size="sm" className="w-full" onClick={() => onConnect(profile.id)}>
+                  Connetti
+                </Button>
+              </Card>
+            ))}
+          </div>
+        </Card>
+      )}
 
-              <p className="text-sm text-muted-foreground mb-3 line-clamp-2">{profile.summary}</p>
-
-              <div className="flex flex-wrap gap-1 mb-3">
-                {profile.skills.slice(0, 4).map((skill, i) => (
-                  <Badge key={i} variant="secondary" className="text-xs">
-                    {skill.name}
-                  </Badge>
-                ))}
-                {profile.skills.length > 4 && (
-                  <Badge variant="outline" className="text-xs">
-                    +{profile.skills.length - 4}
-                  </Badge>
-                )}
-              </div>
-
-              <Button size="sm" className="w-full" onClick={() => onConnect(profile.id)}>
-                Connetti
-              </Button>
-            </Card>
-          ))}
-        </div>
-      </Card>
-
-      {/* Opportunità */}
+      {/* Opportunità: visibili a tutti */}
       <Card className="p-6">
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-lg font-semibold flex items-center gap-2">
@@ -123,7 +124,6 @@ export const DiscoverSection = (
             <Plus className="h-4 w-4 mr-1" /> Nuova
           </Button>
         </div>
-
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {opportunities.map((opp) => (
             <Card key={opp.id} className="p-4">
@@ -149,8 +149,8 @@ export const DiscoverSection = (
         </div>
       </Card>
 
-      {/* JD Top 20 - Lavori a cui posso candidarmi */}
-      {activeCandidate && matchedJd.length > 0 && (
+      {/* JD Top 20 - Lavori a cui posso candidarmi: solo per candidati */}
+      {role === "candidate" && activeCandidate && matchedJd.length > 0 && (
         <Card className="p-6 mt-6">
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-lg font-semibold flex items-center gap-2">

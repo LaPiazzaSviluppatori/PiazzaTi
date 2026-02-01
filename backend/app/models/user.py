@@ -27,8 +27,8 @@ class User(Base):
     name: Mapped[Optional[str]] = mapped_column(String)
     password_hash: Mapped[Optional[str]] = mapped_column(String)
     role: Mapped[Optional[str]] = mapped_column(
-        Enum("candidate", "recruiter", "admin", name="user_role"),
-        comment=("Ruolo utente: candidate, recruiter, admin"),
+        Enum("candidate", "company", "admin", name="user_role"),
+        comment=("Ruolo utente: candidate, company, admin"),
     )
     created_at: Mapped[Optional[datetime.datetime]] = mapped_column(
         DateTime, server_default=text("now()")
@@ -40,8 +40,13 @@ class User(Base):
     is_active: Mapped[Optional[bool]] = mapped_column(
         Boolean, server_default=text("true")
     )
+
     phone: Mapped[Optional[str]] = mapped_column(String)
     company: Mapped[Optional[str]] = mapped_column(String)
+    city: Mapped[Optional[str]] = mapped_column(String)
+    region: Mapped[Optional[str]] = mapped_column(String)
+    country: Mapped[Optional[str]] = mapped_column(String)
+    surname: Mapped[Optional[str]] = mapped_column(String)
 
     # Relationships
     documents: Mapped[list["Document"]] = relationship(
