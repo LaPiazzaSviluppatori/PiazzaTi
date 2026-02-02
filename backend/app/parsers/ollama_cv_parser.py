@@ -396,29 +396,33 @@ class OllamaCVParser:
             logger.warning("Failed to parse LLM experience JSON: %s", e)
             return
 
-        if not isinstance(items, list):
-            return
-
-        for item in items[:max_experiences]:
-            if not isinstance(item, dict):
-                continue
-            try:
-                exp = Experience(
-                    title=(item.get("title") or "").strip() or None,
-                    company=(item.get("company") or "").strip() or None,
-                    city=(item.get("city") or "").strip() or None,
-                    country=(item.get("country") or "").strip() or None,
-                    start_date=(item.get("start_date") or "").strip() or None,
-                    end_date=(item.get("end_date") or "").strip() or None,
-                    is_current=item.get("is_current", False),
-                    description=(item.get("description") or "").strip() or None,
-                )
-                # Filtra entry completamente vuote
-                if not (exp.title or exp.company or exp.description):
+        if isinstance(items, list):
+            for item in items[:max_experiences]:
+                if not isinstance(item, dict):
                     continue
-                data.experience.append(exp)
-            except Exception:
-                continue
+                try:
+                    exp = Experience(
+                        title=(item.get("title") or "").strip() or None,
+                        company=(item.get("company") or "").strip() or None,
+                        city=(item.get("city") or "").strip() or None,
+                        country=(item.get("country") or "").strip() or None,
+                        start_date=(item.get("start_date") or "").strip() or None,
+                        end_date=(item.get("end_date") or "").strip() or None,
+                        is_current=item.get("is_current", False),
+                        description=(item.get("description") or "").strip() or None,
+                    )
+                    # Filtra entry completamente vuote
+                    if not (exp.title or exp.company or exp.description):
+                        continue
+                    data.experience.append(exp)
+                except Exception:
+                    continue
+
+        # Fallback: se l'LLM non ha prodotto nulla, usa l'heuristica sezione "Esperienza"
+        if not data.experience and data.full_text:
+            fallback_exps = self._extract_experience_section_based(data.full_text)
+            if fallback_exps:
+                data.experience.extend(fallback_exps)
 
     def _extract_projects_llm(self, data: ParsedDocument, max_projects: int = 5) -> None:
         """Usa l'LLM per estrarre progetti rilevanti (personali o lavorativi).
