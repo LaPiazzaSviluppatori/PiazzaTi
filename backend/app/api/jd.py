@@ -1,3 +1,20 @@
+@router.get("/jd/list")
+async def list_jd(db: Session = Depends(get_db)):
+    """Restituisce le prime 20 JD salvate, ordinate per data di creazione decrescente."""
+    jds = db.query(Document).filter(Document.type == "jd").order_by(Document.created_at.desc()).limit(20).all()
+    # Serializza solo i campi principali
+    return [
+        {
+            "jd_id": str(jd.id),
+            "title": jd.title,
+            "description": jd.description_raw,
+            "language": jd.language,
+            "created_at": jd.created_at.isoformat() if jd.created_at else None,
+            "requirements": (jd.parsed_json or {}).get("requirements", []),
+            "nice_to_have": (jd.parsed_json or {}).get("nice_to_have", []),
+        }
+        for jd in jds
+    ]
 from fastapi import APIRouter, Request, Depends, HTTPException
 from sqlalchemy.orm import Session
 from ..database import get_db
@@ -5,6 +22,7 @@ from ..models.document import Document
 import datetime
 from fastapi.responses import JSONResponse
 import os
+import subprocess
 import uuid
 import json
 
@@ -55,7 +73,14 @@ async def upload_jd(request: Request):
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(jd_data, f, ensure_ascii=False, indent=2)
         print(f"[JD UPLOAD] File salvato: {filepath}", file=sys.stderr)
-        # Ora la generazione embedding JD e il matching sono gestiti solo dal batch processor.
+        # Lancia la pipeline di normalizzazione e embedding JD in background
+        try:
+            subprocess.Popen([
+                "python", "NLP/normalizzatore.py"
+            ], cwd=os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+            print("[JD UPLOAD] Pipeline normalizzazione JD avviata", file=sys.stderr)
+        except Exception as e:
+            print(f"[JD UPLOAD] Errore avvio pipeline: {e}", file=sys.stderr)
         return JSONResponse({"status": "ok", "filename": filename})
     except PermissionError as e:
         print(f"[JD UPLOAD] PermissionError: {e}", file=sys.stderr)

@@ -8,7 +8,6 @@ import { PipelineSection } from "@/components/PipelineSection";
 import { DiscoverSection } from "@/components/DiscoverSection";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  mockJobDescriptions,
   mockOpportunities,
   mockFeedback,
   mockAuditLog,
@@ -38,14 +37,15 @@ function getUserId(email: string): string {
 
 interface JwtPayload {
   user_id?: string;
-  [key: string]: unknown;
+  sub?: string;
 }
 
 function decodeJwtUserId(token: string | null): string | undefined {
   if (!token) return undefined;
   try {
     const payload = jwtDecode<JwtPayload>(token);
-    return payload.user_id;
+    // Cerca user_id, altrimenti sub (come da backend)
+    return payload.user_id || payload.sub;
   } catch (e) {
     // errore decodifica
     return undefined;
@@ -128,7 +128,16 @@ const Index = () => {
     }
     return [];
   });
-  const [jobDescriptions, setJobDescriptions] = useState<JobDescription[]>(mockJobDescriptions);
+  const [jobDescriptions, setJobDescriptions] = useState<JobDescription[]>([]);
+    // Carica le JD reali dal backend all'avvio
+    useEffect(() => {
+      fetch("/api/jd/list")
+        .then(res => res.json())
+        .then(data => {
+          if (Array.isArray(data)) setJobDescriptions(data);
+        })
+        .catch(() => {});
+    }, []);
   const [opportunities, setOpportunities] = useState<Opportunity[]>(mockOpportunities);
   const [feedback, setFeedback] = useState<Feedback[]>(mockFeedback);
   const [auditLog, setAuditLog] = useState<AuditLogEntry[]>(mockAuditLog);

@@ -149,42 +149,31 @@ export const CandidateSection = ({
   // Candidate Login Modal state
   
           
-  const selectedJd = jobDescriptions.find((jd) => jd.id === selectedJdId);
+  const selectedJd = jobDescriptions.find((jd) => jd.jd_id === selectedJdId);
 
   // Mock compatibility calculation
   const calculateCompatibility = () => {
     if (!selectedJd) return null;
-
-    const mustRequirements = selectedJd.requirements.filter((r) => r.type === "must");
-    const niceRequirements = selectedJd.requirements.filter((r) => r.type === "nice");
-
+    // Tutti i requirements sono must-have
+    const mustRequirements = selectedJd.requirements;
     const candidateSkillNames = (candidateData.skills || []).map((s) => s.name.toLowerCase());
-
     const mustMatch = mustRequirements.filter((req) =>
-      candidateSkillNames.some((skill) => skill.includes(req.text.toLowerCase()))
+      candidateSkillNames.some((skill) => skill.includes(req.toLowerCase()))
     ).length;
-
-    const niceMatch = niceRequirements.filter((req) =>
-      candidateSkillNames.some((skill) => skill.includes(req.text.toLowerCase()))
-    ).length;
-
     const mustPercentage = mustRequirements.length > 0 ? (mustMatch / mustRequirements.length) * 100 : 0;
-    const nicePercentage = niceRequirements.length > 0 ? (niceMatch / niceRequirements.length) * 100 : 0;
-
-    const overallScore = mustPercentage * 0.7 + nicePercentage * 0.3;
-
     return {
-      score: Math.round(overallScore),
+      score: Math.round(mustPercentage),
       mustMatch,
       mustTotal: mustRequirements.length,
       mustPercentage: Math.round(mustPercentage),
-      niceMatch,
-      niceTotal: niceRequirements.length,
-      nicePercentage: Math.round(nicePercentage),
     };
   };
 
-  const compatibility = calculateCompatibility();
+  // Stato per lo score reale dal matcher
+  const [realCompatibility, setRealCompatibility] = useState<number|null>(null);
+  const compatibility = realCompatibility !== null
+    ? { score: realCompatibility, mustMatch: 0, mustTotal: 0, mustPercentage: realCompatibility }
+    : calculateCompatibility();
 
   const handleAddSkill = () => {
     const skillName = newSkill.trim();
@@ -285,17 +274,36 @@ export const CandidateSection = ({
     setCvModalOpen(false);
   };
 
-  const handleSubmitApplication = () => {
+  const handleSubmitApplication = async () => {
     if (!selectedJdId) {
       toast({ title: "Seleziona una JD", description: "Seleziona una posizione prima di candidarti", variant: "destructive" });
       return;
     }
-
-    const jd = jobDescriptions.find(j => j.id === selectedJdId);
-    toast({ 
-      title: "Candidatura inviata!", 
-      description: `La tua candidatura per "${jd?.title}" è stata inviata con successo (demo)`,
-    });
+    try {
+      const response = await fetch("/api/match_cv_jd", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cv_path: userId,
+          jd_path: selectedJdId
+        })
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        toast({ title: "Errore matcher", description: error.detail || "Errore durante il matching", variant: "destructive" });
+        return;
+      }
+      const data = await response.json();
+      if (typeof data.score === "number") {
+        setRealCompatibility(data.score);
+      }
+      toast({
+        title: "Compatibilità calcolata!",
+        description: `Score: ${data.score ?? JSON.stringify(data)}`,
+      });
+    } catch (err) {
+      toast({ title: "Errore di rete", description: String(err), variant: "destructive" });
+    }
   };
 
   return (
@@ -654,7 +662,7 @@ export const CandidateSection = ({
                 </SelectTrigger>
                 <SelectContent>
                   {jobDescriptions.map((jd) => (
-                    <SelectItem key={jd.id} value={jd.id}>
+                    <SelectItem key={jd.jd_id} value={jd.jd_id}>
                       {jd.title}
                     </SelectItem>
                   ))}
@@ -668,7 +676,6 @@ export const CandidateSection = ({
                   <span className="font-semibold">Compatibilità</span>
                   <span className="text-2xl font-bold text-primary">{compatibility.score}%</span>
                 </div>
-
                 <div className="space-y-2 text-sm">
                   <div>
                     <div className="flex items-center justify-between mb-1">
@@ -684,27 +691,10 @@ export const CandidateSection = ({
                       />
                     </div>
                   </div>
-
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-muted-foreground">Nice-to-have</span>
-                      <span className="font-medium">
-                        {compatibility.niceMatch}/{compatibility.niceTotal} ({compatibility.nicePercentage}%)
-                      </span>
-                    </div>
-                    <div className="h-2 rounded-full bg-background">
-                      <div
-                        className="h-full rounded-full bg-accent transition-all"
-                        style={{ width: `${compatibility.nicePercentage}%` }}
-                      />
-                    </div>
-                  </div>
                 </div>
-
                 <p className="text-xs text-muted-foreground mt-2">
-                  Score calcolato: 70% must-have + 30% nice-to-have
+                  Score calcolato: solo must-have
                 </p>
-
                 <Button onClick={handleSubmitApplication} className="w-full mt-4">
                   <Send className="h-4 w-4 mr-2" />
                   Invia candidatura (demo)

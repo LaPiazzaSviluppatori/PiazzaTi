@@ -11,12 +11,11 @@ from pathlib import Path
 from typing import List, Dict, Set, Tuple
 from datetime import datetime
 import pandas as pd
-import jwt  # pip install pyjwt
+
 
 INPUT_FOLDER = "/var/lib/docker/piazzati-data/cvs"
 OUTPUT_FOLDER = "Dataset"
 OUTPUT_FILENAME = "cv_dataset.csv"
-JWT_PATH = Path(__file__).parent / "user_jwt.txt"
 
 ARRAY_SEP = " | "
 LIST_SEP = ", "
@@ -27,15 +26,22 @@ def get_active_user_ids(input_path: Path) -> Set[str]:
     Estrae tutti gli user_id dai file JSON presenti nella cartella.
     Rappresenta gli utenti attivi nel sistema.
     """
-    # Ora l'user_id è sempre quello del JWT, non serve estrarlo dai JSON
-    try:
-        with open(JWT_PATH, "r", encoding="utf-8") as f:
-            jwt_token = f.read().strip()
-        user_id = get_user_id_from_jwt(jwt_token)
-        return {user_id}
-    except Exception as e:
-        print(f"Errore nel recupero JWT o user_id: {e}")
-        return set()
+    active_users = set()
+
+    json_files = list(input_path.glob("*.json"))
+
+    for json_file in json_files:
+        try:
+            with open(json_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+
+            user_id = str(data.get('user_id', '')) if data.get('user_id') else ''
+            if user_id:
+                active_users.add(user_id)
+        except:
+            continue
+
+    return active_users
 
 
 def discover_all_tags(input_path: Path) -> Set[str]:
@@ -147,9 +153,12 @@ def extract_identifiers_from_json(json_path: Path) -> Tuple[str, str]:
     try:
         with open(json_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
+
+        user_id = str(data.get('user_id', '')) if data.get('user_id') else ''
         sha256 = str(data.get('file_sha256', '')) if data.get('file_sha256') else ''
-        # user_id non viene più estratto dal JSON
-        return '', sha256
+
+        return user_id, sha256
+
     except Exception as e:
         print(f"  Errore lettura da {json_path.name}: {e}")
         return '', ''
@@ -355,27 +364,14 @@ def flatten_preferences(data: Dict) -> Dict:
     }
 
 
-def get_user_id_from_jwt(token: str) -> str:
-    payload = jwt.decode(token, options={"verify_signature": False})
-    return payload["user_id"]
-
-
 def json_to_row(data: Dict, source_file: str, all_known_tags: Set[str]) -> Dict:
     """
     Converte un JSON completo in una riga CSV piatta.
+    
     MODIFICATO: aggiunto parametro all_known_tags per gestire tag dinamici
     """
-    # Leggi JWT e estrai user_id
-    try:
-        with open(JWT_PATH, "r", encoding="utf-8") as f:
-            jwt_token = f.read().strip()
-        user_id = get_user_id_from_jwt(jwt_token)
-    except Exception as e:
-        print(f"Errore nel recupero JWT o user_id: {e}")
-        raise
-
     row = {
-        'user_id': user_id,
+        'user_id': data.get('user_id', ''),
         'source_file': source_file,
         'processed_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         'document_id': data.get('document_id', ''),
