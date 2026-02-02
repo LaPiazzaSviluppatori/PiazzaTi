@@ -91,7 +91,7 @@ services:
       ollama:
         condition: service_started
     environment:
-      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_BASE_URL=http://piazzati-ollama:11434
       - DATABASE_URL=postgresql://piazzati_user:piazzati_password@piazzati-postgres:5432/db_piazzati
       - WORKER_TIMEOUT=300
       - MAX_WORKERS=2
