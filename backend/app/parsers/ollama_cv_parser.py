@@ -357,6 +357,8 @@ class OllamaCVParser:
     def _extract_with_5modules(self, text: str) -> ParsedDocument:
         """Pipeline principale a 5 moduli (LLM + fallback) sul testo completo del CV."""
         doc = self._create_empty_document()
+        # Serve a tutti i moduli che leggono full_text (es. _extract_experience_llm)
+        doc.full_text = text
 
         # Module 1: Personal Info (LLM + regex fallback)
         personal_context = text[:1500]
@@ -381,23 +383,21 @@ class OllamaCVParser:
             doc.summary = summary_data["summary"]
 
         # Module 3: Experience + Education
+        # Esperienze: usa il vecchio estrattore LLM specializzato, che lavora su full_text
+        self._extract_experience_llm(doc)
+
+        # Education: prova a usare anche il modulo LLM dedicato
         experience_context = self._find_experience_section(text, max_chars=4000) or text[:4000]
         exp_edu_data = self._extract_module3_experience_education(experience_context)
 
-        if exp_edu_data:
-            if "experience" in exp_edu_data:
-                for exp in exp_edu_data["experience"]:
-                    if isinstance(exp, dict):
-                        doc.experience.append(
-                            Experience(**{k: v for k, v in exp.items() if k not in ["spans"]})
-                        )
-            if "education" in exp_edu_data:
-                for edu in exp_edu_data["education"]:
-                    if isinstance(edu, dict):
-                        doc.education.append(
-                            Education(**{k: v for k, v in edu.items() if k not in ["spans"]})
-                        )
+        if exp_edu_data and "education" in exp_edu_data:
+            for edu in exp_edu_data["education"]:
+                if isinstance(edu, dict):
+                    doc.education.append(
+                        Education(**{k: v for k, v in edu.items() if k not in ["spans"]})
+                    )
 
+        # Se anche l'estrattore LLM non trova nulla, ultimo fallback molto conservativo
         if len(doc.experience) == 0:
             fallback_exp = self._extract_experience_section_based(text)
             doc.experience.extend(fallback_exp)
