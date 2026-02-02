@@ -325,9 +325,14 @@ class OllamaCVParser:
         info = self._extract_personal_info_regex(text)
         for k, v in info.items():
             setattr(doc.personal_info, k, v)
+        # Esperienze lavorative con LLM
+        self._extract_experience_llm(doc)
+        self._detect_is_current_jobs(doc)
         # Fallback sezioni strutturate
         self._extract_education_fallback(doc)
         self._extract_languages_fallback(doc)
+        # Progetti principali con LLM
+        self._extract_projects_llm(doc)
         # Estrazione skill con LLM (Ollama) + heuristics
         self._extract_skills_llm(doc)
         self._filter_and_enrich_skills(doc)
@@ -340,6 +345,154 @@ class OllamaCVParser:
         doc.compute_section_confidence()
         doc.detect_low_confidence_sections_v2()
         return doc
+
+    def _extract_experience_llm(self, data: ParsedDocument, max_experiences: int = 6) -> None:
+        """Usa l'LLM per estrarre esperienze lavorative strutturate.
+
+        Output atteso: array JSON di oggetti con campi come
+        title, company, city, country, start_date, end_date, is_current, description.
+        """
+        if not getattr(self, "llm", None):
+            return
+        if not data.full_text:
+            return
+
+        # Isola prima la sezione esperienza se possibile, altrimenti usa il testo completo (troncato)
+        exp_section = self._find_experience_section(data.full_text, max_chars=8000)
+        source_text = exp_section or data.full_text[:8000]
+
+        prompt = (
+            "Sei un assistente che estrae ESPERIENZE LAVORATIVE da CV. "
+            "Dato il testo seguente, individua le principali esperienze (max 6) "
+            "e restituisci SOLO un array JSON, senza testo aggiuntivo, nel formato:\n"
+            "[ {\"title\": \"Ruolo\", \"company\": \"Azienda\", "
+            "\"city\": \"Città\", \"country\": \"Paese\", "
+            "\"start_date\": \"YYYY-MM\", \"end_date\": \"YYYY-MM\" o null, "
+            "\"is_current\": true/false, \"description\": \"Descrizione breve\" }, ... ]\n\n"
+            "Se non trovi qualche campo lascialo vuoto o null.\n\n"
+            "Testo CV:\n" + source_text
+        )
+
+        try:
+            if hasattr(self.llm, "invoke"):
+                raw = self.llm.invoke(prompt)
+            else:  # type: ignore[call-arg]
+                raw = self.llm(prompt)
+        except Exception as e:  # pragma: no cover
+            logger.warning("LLM experience extraction failed: %s", e)
+            return
+
+        if isinstance(raw, str):
+            text = raw
+        else:
+            text = getattr(raw, "content", str(raw))
+
+        try:
+            start = text.index("[")
+            end = text.rindex("]") + 1
+            json_str = text[start:end]
+            items = json.loads(json_str)
+        except Exception as e:
+            logger.warning("Failed to parse LLM experience JSON: %s", e)
+            return
+
+        if not isinstance(items, list):
+            return
+
+        for item in items[:max_experiences]:
+            if not isinstance(item, dict):
+                continue
+            try:
+                exp = Experience(
+                    title=(item.get("title") or "").strip() or None,
+                    company=(item.get("company") or "").strip() or None,
+                    city=(item.get("city") or "").strip() or None,
+                    country=(item.get("country") or "").strip() or None,
+                    start_date=(item.get("start_date") or "").strip() or None,
+                    end_date=(item.get("end_date") or "").strip() or None,
+                    is_current=item.get("is_current", False),
+                    description=(item.get("description") or "").strip() or None,
+                )
+                # Filtra entry completamente vuote
+                if not (exp.title or exp.company or exp.description):
+                    continue
+                data.experience.append(exp)
+            except Exception:
+                continue
+
+    def _extract_projects_llm(self, data: ParsedDocument, max_projects: int = 5) -> None:
+        """Usa l'LLM per estrarre progetti rilevanti (personali o lavorativi).
+
+        Output atteso: array JSON di oggetti con campi
+        name, description, role, technologies (array di stringhe).
+        """
+        if not getattr(self, "llm", None):
+            return
+        if not data.full_text:
+            return
+
+        proj_section = self._find_section(data.full_text, ["progetti", "projects", "portfolio"])
+        source_text = proj_section or data.full_text[:6000]
+
+        prompt = (
+            "Sei un assistente che estrae PROGETTI da CV. "
+            "Dato il testo seguente, individua i progetti più rilevanti (max 5) "
+            "e restituisci SOLO un array JSON, senza testo aggiuntivo, nel formato:\n"
+            "[ {\"name\": \"Nome progetto\", \"description\": \"Descrizione breve\", "
+            "\"role\": \"Ruolo\", \"technologies\": [\"Tech1\", \"Tech2\"] }, ... ]\n\n"
+            "Se non trovi progetti puoi restituire un array vuoto [].\n\n"
+            "Testo CV:\n" + source_text
+        )
+
+        try:
+            if hasattr(self.llm, "invoke"):
+                raw = self.llm.invoke(prompt)
+            else:  # type: ignore[call-arg]
+                raw = self.llm(prompt)
+        except Exception as e:  # pragma: no cover
+            logger.warning("LLM project extraction failed: %s", e)
+            return
+
+        if isinstance(raw, str):
+            text = raw
+        else:
+            text = getattr(raw, "content", str(raw))
+
+        try:
+            start = text.index("[")
+            end = text.rindex("]") + 1
+            json_str = text[start:end]
+            items = json.loads(json_str)
+        except Exception as e:
+            logger.warning("Failed to parse LLM project JSON: %s", e)
+            return
+
+        if not isinstance(items, list):
+            return
+
+        for item in items[:max_projects]:
+            if not isinstance(item, dict):
+                continue
+            try:
+                techs = item.get("technologies") or []
+                if isinstance(techs, str):
+                    techs = [t.strip() for t in techs.split(",") if t.strip()]
+                elif isinstance(techs, list):
+                    techs = [str(t).strip() for t in techs if str(t).strip()]
+                else:
+                    techs = []
+
+                proj = Project(
+                    name=(item.get("name") or "").strip(),
+                    description=(item.get("description") or "").strip() or None,
+                    role=(item.get("role") or "").strip() or None,
+                    technologies=techs,
+                )
+                if not proj.name:
+                    continue
+                data.projects.append(proj)
+            except Exception:
+                continue
 
     def _extract_skills_llm(self, data: ParsedDocument, max_skills: int = 20) -> None:
         """Usa l'LLM Ollama per estrarre una lista di skill dal testo del CV.
@@ -585,9 +738,17 @@ class OllamaCVParser:
         email_match = re.search(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', text)
         if email_match:
             info['email'] = email_match.group(0)
-        phone_match = re.search(r'[\+]?[0-9]{1,3}?[-.\s]?[(]?[0-9]{1,4}[)]?[-.\s]?[0-9]{1,4}[-.\s]?[0-9]{1,9}', text)
-        if phone_match:
-            info['phone'] = phone_match.group(0)
+        # Estrai tutti i numeri di telefono plausibili e scegli il più lungo
+        phone_pattern = r'[\+]?[0-9]{1,3}[\s\-\.\)]*[0-9]{2,4}(?:[\s\-\.]?[0-9]{2,4}){2,4}'
+        phone_matches = re.findall(phone_pattern, text)
+        if phone_matches:
+            # Scegli il match con il maggior numero di cifre, per evitare troncamenti
+            def digit_count(s: str) -> int:
+                return sum(1 for ch in s if ch.isdigit())
+
+            best = max(phone_matches, key=digit_count)
+            if digit_count(best) >= 8:  # filtra numeri troppo corti
+                info['phone'] = best.strip()
         lines = text.split('\n')
         for line in lines[:10]:
             line = line.strip()
