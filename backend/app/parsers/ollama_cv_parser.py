@@ -307,53 +307,552 @@ class OllamaCVParser:
         self._init_skill_keywords()
 
     def parse(self, file_path: str, max_pages: int = 10) -> ParsedDocument:
+        """Esegue il parsing di un CV PDF e restituisce un ParsedDocument.
+
+        Implementa la pipeline v2.1.1-ULTIMATE (CONSERVATIVE) a 5 moduli
+        con post-processing, mantenendo la stessa interfaccia pubblica.
         """
-        Esegue il parsing di un CV PDF e restituisce un ParsedDocument.
-        """
+        file_path_obj = Path(file_path)
+        if not file_path_obj.exists():
+            raise FileNotFoundError(f"File not found: {file_path_obj}")
+
         # Calcola hash file
-        file_sha256 = self._compute_file_hash(file_path)
-        # Estrai testo dal PDF
-        text = self._extract_text_from_pdf(file_path, max_pages=max_pages)
-        if text.startswith("[OCR ERROR"):
+        file_sha256 = self._compute_file_hash(str(file_path_obj))
+
+        # Estrai testo dal PDF (OCR) con limite pagine configurabile
+        raw_text = self._extract_text_from_pdf(str(file_path_obj), max_pages=max_pages)
+        if isinstance(raw_text, str) and raw_text.startswith("[OCR ERROR"):
             doc = self._create_empty_document()
-            doc.file_name = file_path
+            doc.file_name = file_path_obj.name
             doc.file_sha256 = file_sha256
-            doc.full_text = text
-            doc.add_warning(text)
+            doc.full_text = raw_text
+            doc.add_warning(raw_text)
             return doc
 
-        doc = ParsedDocument(
-            document_id=str(uuid.uuid4()),
-            document_type=DocumentType.cv,
-            file_sha256=file_sha256,
-            file_name=file_path,
-            full_text=text,
-            parsed_at=datetime.now(),
-        )
-        # Esempio: estrazione info personali
-        info = self._extract_personal_info_regex(text)
-        for k, v in info.items():
-            setattr(doc.personal_info, k, v)
-        # Esperienze lavorative con LLM
-        self._extract_experience_llm(doc)
-        self._detect_is_current_jobs(doc)
-        # Fallback sezioni strutturate
-        self._extract_education_fallback(doc)
-        self._extract_languages_fallback(doc)
-        # Progetti principali con LLM
-        self._extract_projects_llm(doc)
-        # Estrazione skill con LLM (Ollama) + heuristics
-        self._extract_skills_llm(doc)
-        self._filter_and_enrich_skills(doc)
-        # Summary euristico dal testo
-        self._extract_summary_fallback(doc)
-        self._enrich_country_info(doc)
-        self._clean_date_fields(doc)
-        doc.collect_all_spans()
-        doc.detect_missing_sections()
-        doc.compute_section_confidence()
-        doc.detect_low_confidence_sections_v2()
+        # Normalizza artefatti OCR
+        full_text = self._clean_ocr_text(raw_text)
+
+        # Rileva formato Europass
+        is_europass = self._detect_europass_format(full_text)
+
+        # Pipeline a 5 moduli (o path Europass dedicato)
+        if is_europass:
+            extracted_data = self._parse_europass_cv(full_text)
+        else:
+            extracted_data = self._extract_with_5modules(full_text)
+
+        # Metadati documento
+        extracted_data.document_id = str(uuid.uuid4())
+        extracted_data.file_sha256 = file_sha256
+        extracted_data.file_name = file_path_obj.name
+        extracted_data.full_text = full_text
+        extracted_data.parsing_method = f"{'europass' if is_europass else '5module'}_v2.1.1_conservative"
+        extracted_data.parsed_at = datetime.now()
+
+        # Post-processing globale (education/lang fallback, skills, summary, spans, confidence, ecc.)
+        self._run_postprocessing(extracted_data)
+
+        return extracted_data
+
+    def _extract_with_5modules(self, text: str) -> ParsedDocument:
+        """Pipeline principale a 5 moduli (LLM + fallback) sul testo completo del CV."""
+        doc = self._create_empty_document()
+
+        # Module 1: Personal Info (LLM + regex fallback)
+        personal_context = text[:1500]
+        personal_data = self._extract_module1_personal_info(personal_context)
+
+        if personal_data:
+            doc.personal_info = PersonalInfo(**personal_data)
+
+        if not doc.personal_info.full_name or not doc.personal_info.email:
+            regex_personal = self._extract_personal_info_regex(text)
+            if not doc.personal_info.full_name and regex_personal.get("full_name"):
+                doc.personal_info.full_name = regex_personal["full_name"]
+            if not doc.personal_info.email and regex_personal.get("email"):
+                doc.personal_info.email = regex_personal["email"]
+            if not doc.personal_info.phone and regex_personal.get("phone"):
+                doc.personal_info.phone = regex_personal["phone"]
+
+        # Module 2: Summary
+        summary_context = text[:2000]
+        summary_data = self._extract_module2_summary(summary_context)
+        if summary_data and "summary" in summary_data:
+            doc.summary = summary_data["summary"]
+
+        # Module 3: Experience + Education
+        experience_context = self._find_experience_section(text, max_chars=4000) or text[:4000]
+        exp_edu_data = self._extract_module3_experience_education(experience_context)
+
+        if exp_edu_data:
+            if "experience" in exp_edu_data:
+                for exp in exp_edu_data["experience"]:
+                    if isinstance(exp, dict):
+                        doc.experience.append(
+                            Experience(**{k: v for k, v in exp.items() if k not in ["spans"]})
+                        )
+            if "education" in exp_edu_data:
+                for edu in exp_edu_data["education"]:
+                    if isinstance(edu, dict):
+                        doc.education.append(
+                            Education(**{k: v for k, v in edu.items() if k not in ["spans"]})
+                        )
+
+        if len(doc.experience) == 0:
+            fallback_exp = self._extract_experience_section_based(text)
+            doc.experience.extend(fallback_exp)
+
+        # Module 4: Skills + Certifications + Languages
+        skills_context = text[:8000]
+        skills_data = self._extract_module4_skills_certs_languages(skills_context)
+
+        if skills_data:
+            if "skills" in skills_data:
+                for skill in skills_data["skills"]:
+                    if isinstance(skill, dict) and "name" in skill:
+                        doc.skills.append(
+                            Skill(
+                                name=skill["name"],
+                                category=skill.get("category"),
+                                proficiency=skill.get("proficiency"),
+                                source=SkillSource.extracted,
+                            )
+                        )
+            if "languages" in skills_data:
+                for lang in skills_data["languages"]:
+                    if isinstance(lang, dict) and "name" in lang:
+                        doc.languages.append(Language(**lang))
+            if "certifications" in skills_data:
+                for cert in skills_data["certifications"]:
+                    if isinstance(cert, dict) and "name" in cert:
+                        doc.certifications.append(Certification(**cert))
+
+        # Module 5: Preferences + Projects (CONSERVATIVE)
+        prefs_context = text[:6000]
+        prefs_data = self._extract_module5_preferences_projects(prefs_context)
+
+        if prefs_data:
+            # PREFERENCES: solo se esplicitamente dichiarate
+            if "preferences" in prefs_data and prefs_data["preferences"]:
+                cleaned_prefs = self._clean_preferences(prefs_data["preferences"])
+                if cleaned_prefs and any(v is not None for v in cleaned_prefs.values()):
+                    try:
+                        doc.preferences = JobPreferences(**cleaned_prefs)
+                    except Exception:
+                        doc.preferences = None
+                else:
+                    doc.preferences = None
+
+            # PROJECTS: solo con nome + descrizione valide
+            if "projects" in prefs_data:
+                valid_projects, skipped = self._validate_and_filter_projects(prefs_data["projects"])
+                doc.projects.extend(valid_projects)
+                if skipped > 0:
+                    doc.add_warning(
+                        f"Skipped {skipped} project(s) without valid name or description"
+                    )
+
         return doc
+
+    def _clean_preferences(self, prefs_dict: Dict) -> Optional[Dict]:
+        """Pulisce le job preferences per rimuovere valori inventati/placeholder.
+
+        Restituisce None se tutte le preferenze risultano invalide.
+        """
+        cleaned: Dict = {}
+
+        invalid_values = {
+            "not_found",
+            "not found",
+            "n/a",
+            "na",
+            "none",
+            "null",
+            "not specified",
+            "not mentioned",
+            "unknown",
+            "tbd",
+            "to be determined",
+            "any",
+            "open",
+            "flexible",
+        }
+
+        for field, value in prefs_dict.items():
+            # None o stringa vuota
+            if value is None or value == "":
+                cleaned[field] = None
+                continue
+
+            # Liste (desired_roles, preferred_locations)
+            if isinstance(value, list):
+                if len(value) == 0:
+                    cleaned[field] = None
+                else:
+                    valid_items = [
+                        item
+                        for item in value
+                        if item and str(item).strip().lower() not in invalid_values
+                    ]
+                    cleaned[field] = valid_items if valid_items else None
+
+            # Stringhe singole
+            elif isinstance(value, str):
+                value_lower = value.strip().lower()
+                if value_lower in invalid_values or len(value.strip()) < 3:
+                    cleaned[field] = None
+                else:
+                    cleaned[field] = value.strip()
+
+            else:
+                cleaned[field] = value
+
+        if all(v is None for v in cleaned.values()):
+            return None
+
+        return cleaned
+
+    def _validate_and_filter_projects(
+        self, projects_data: List[Dict]
+    ) -> Tuple[List[Project], int]:
+        """Valida i progetti: devono avere name e description (>10 char).
+
+        Restituisce (progetti_validi, numero_scartati).
+        """
+        valid_projects: List[Project] = []
+        skipped_count = 0
+
+        invalid_names = {
+            "not_found",
+            "not found",
+            "n/a",
+            "na",
+            "none",
+            "null",
+            "project",
+            "personal project",
+            "side project",
+            "various projects",
+        }
+
+        for proj in projects_data:
+            if not isinstance(proj, Dict):
+                skipped_count += 1
+                continue
+
+            proj_name = proj.get("name")
+            proj_desc = proj.get("description", "")
+
+            if not proj_name or str(proj_name).strip().lower() in invalid_names:
+                skipped_count += 1
+                continue
+
+            if not proj_desc or len(str(proj_desc).strip()) < 10:
+                skipped_count += 1
+                continue
+
+            desc_lower = str(proj_desc).lower()
+            if any(placeholder in desc_lower for placeholder in ["not found", "n/a", "none"]):
+                skipped_count += 1
+                continue
+
+            try:
+                valid_projects.append(Project(**proj))
+            except Exception:
+                skipped_count += 1
+
+        return valid_projects, skipped_count
+
+    def _extract_module1_personal_info(self, text: str) -> Optional[Dict]:
+        """Modulo 1: estrazione dati personali via LLM (JSON strict)."""
+        if not getattr(self, "llm", None):
+            return None
+
+        prompt = f"""Extract personal information from this CV. Output ONLY valid JSON.
+
+Schema:
+{{
+  "full_name": "First Last Name",
+  "email": "email@example.com",
+  "phone": "+39 123 456 7890",
+  "address": "Via Roma 123, 00100 Roma",
+  "city": "City Name",
+  "country": "Country Name",
+  "linkedin": "https://linkedin.com/in/...",
+  "github": "https://github.com/..."
+}}
+
+CV TEXT:
+{text}
+
+Output ONLY the JSON object:"""
+
+        try:
+            if hasattr(signal, "SIGALRM"):
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(30)
+            response = self.llm.invoke(prompt)
+            if hasattr(signal, "SIGALRM"):
+                signal.alarm(0)
+
+            json_match = re.search(r"\{.*\}", response, re.DOTALL)
+            if json_match:
+                return json.loads(json_match.group(0))
+        except Exception:
+            if hasattr(signal, "SIGALRM"):
+                signal.alarm(0)
+        return None
+
+    def _extract_module2_summary(self, text: str) -> Optional[Dict]:
+        """Modulo 2: estrazione summary professionale via LLM (JSON strict)."""
+        if not getattr(self, "llm", None):
+            return None
+
+        prompt = f"""Extract the professional summary from this CV. Output ONLY valid JSON.
+
+Schema:
+{{
+  "summary": "Professional summary text here"
+}}
+
+CV TEXT:
+{text}
+
+Output ONLY the JSON object:"""
+
+        try:
+            if hasattr(signal, "SIGALRM"):
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(20)
+            response = self.llm.invoke(prompt)
+            if hasattr(signal, "SIGALRM"):
+                signal.alarm(0)
+
+            json_match = re.search(r"\{.*\}", response, re.DOTALL)
+            if json_match:
+                return json.loads(json_match.group(0))
+        except Exception:
+            if hasattr(signal, "SIGALRM"):
+                signal.alarm(0)
+        return None
+
+    def _extract_module3_experience_education(self, text: str) -> Optional[Dict]:
+        """Modulo 3: esperienza lavorativa + formazione via LLM (JSON strict)."""
+        if not getattr(self, "llm", None):
+            return None
+
+        prompt = f"""Extract work experience and education from this CV. Output ONLY valid JSON.
+
+Schema:
+{{
+  "experience": [
+    {{
+      "title": "Job Title",
+      "company": "Company Name",
+      "city": "City",
+      "start_date": "YYYY-MM or YYYY",
+      "end_date": "YYYY-MM or YYYY or null if current",
+      "is_current": false,
+      "description": "Brief description"
+    }}
+  ],
+  "education": [
+    {{
+      "degree": "Degree type",
+      "field_of_study": "Field",
+      "institution": "University/School name",
+      "graduation_year": 2020
+    }}
+  ]
+}}
+
+CV TEXT:
+{text}
+
+Output ONLY the JSON object:"""
+
+        try:
+            if hasattr(signal, "SIGALRM"):
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(40)
+            response = self.llm.invoke(prompt)
+            if hasattr(signal, "SIGALRM"):
+                signal.alarm(0)
+
+            json_match = re.search(r"\{.*\}", response, re.DOTALL)
+            if json_match:
+                return json.loads(json_match.group(0))
+        except Exception:
+            if hasattr(signal, "SIGALRM"):
+                signal.alarm(0)
+        return None
+
+    def _extract_module4_skills_certs_languages(self, text: str) -> Optional[Dict]:
+        """Modulo 4: skills, certificazioni e lingue via LLM (JSON strict)."""
+        if not getattr(self, "llm", None):
+            return None
+
+        prompt = f"""Extract skills, certifications, and languages from this CV. Output ONLY valid JSON.
+
+Schema:
+{{
+  "skills": [
+    {{
+      "name": "Skill name",
+      "category": "programming|framework|database|cloud|design|other",
+      "proficiency": "beginner|intermediate|advanced|expert"
+    }}
+  ],
+  "languages": [
+    {{
+      "name": "Language name",
+      "level": "A1|A2|B1|B2|C1|C2|native"
+    }}
+  ],
+  "certifications": [
+    {{
+      "name": "Certification name",
+      "issuer": "Issuing organization",
+      "date_obtained": "YYYY or YYYY-MM"
+    }}
+  ]
+}}
+
+CV TEXT:
+{text[:8000]}
+
+Output ONLY the JSON object:"""
+
+        try:
+            if hasattr(signal, "SIGALRM"):
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(30)
+            response = self.llm.invoke(prompt)
+            if hasattr(signal, "SIGALRM"):
+                signal.alarm(0)
+
+            json_match = re.search(r"\{.*\}", response, re.DOTALL)
+            if json_match:
+                return json.loads(json_match.group(0))
+        except Exception:
+            if hasattr(signal, "SIGALRM"):
+                signal.alarm(0)
+        return None
+
+    def _extract_module5_preferences_projects(self, text: str) -> Optional[Dict]:
+        """Modulo 5: preferenze + progetti (modalità CONSERVATIVA, no inferenze)."""
+        if not getattr(self, "llm", None):
+            return {"preferences": None, "projects": []}
+
+        prompt = f"""You are a STRICT CV parser. Extract ONLY information that is EXPLICITLY written in the CV.
+
+CRITICAL RULES:
+1. PREFERENCES: Extract ONLY if explicitly stated (e.g., "Looking for roles in...", "Seeking position as...")
+   - If NOT explicitly mentioned  return null for that field
+   - DO NOT infer from experience or skills
+
+2. PROJECTS: Extract ONLY if there's a dedicated "Projects" section with explicit descriptions
+   - Must have: project name (not generic) + real description (>10 chars)
+   - If NO projects section  return empty array []
+   - DO NOT create fake projects from skills or experience
+
+3. Invalid values: If you see any of these, return null:
+   - "Not found", "N/A", "None", "Not specified", "TBD", "Unknown"
+   - Generic placeholders like "Any", "Open", "Flexible"
+
+CV TEXT (last 6000 chars):
+{text[:6000]}
+
+Output ONLY this JSON structure:
+{{
+  "preferences": {{
+    "desired_roles": ["role1", "role2"] OR null,
+    "preferred_locations": ["city1", "city2"] OR null,
+    "remote_preference": "remote" OR "hybrid" OR "onsite" OR null,
+    "salary_expectation": "range" OR null,
+    "availability": "immediate" OR "2 weeks" OR null
+  }},
+  "projects": [
+    {{
+      "name": "specific project name (REQUIRED)",
+      "description": "what the project does (>10 chars REQUIRED)",
+      "technologies": ["tech1", "tech2"]
+    }}
+  ] OR []
+}}
+
+IMPORTANT: Return null for preferences fields that are NOT explicitly stated. Return [] for projects if no section exists.
+
+Output ONLY valid JSON:"""
+
+        try:
+            if hasattr(signal, "SIGALRM"):
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(25)
+            response = self.llm.invoke(prompt)
+            if hasattr(signal, "SIGALRM"):
+                signal.alarm(0)
+
+            json_match = re.search(r"\{.*\}", response, re.DOTALL)
+            if json_match:
+                data = json.loads(json_match.group(0))
+
+                if "preferences" in data:
+                    if data["preferences"] is None or not any(
+                        v for v in data["preferences"].values()
+                    ):
+                        data["preferences"] = None
+
+                if "projects" not in data or data["projects"] is None:
+                    data["projects"] = []
+
+                return data
+        except Exception:
+            if hasattr(signal, "SIGALRM"):
+                signal.alarm(0)
+
+        return {"preferences": None, "projects": []}
+
+    def _run_postprocessing(self, data: ParsedDocument):
+        """Post-processing globale del ParsedDocument dopo l'estrazione a 5 moduli."""
+        # Fallback education/languages se mancanti
+        if len(data.education) == 0:
+            self._extract_education_fallback(data)
+
+        if len(data.languages) == 0:
+            self._extract_languages_fallback(data)
+
+        # Normalizzazione lingue e livelli
+        self._validate_and_enrich_language_levels(data)
+
+        # Skill: filtro soft skills e arricchimento euristico
+        self._filter_and_enrich_skills(data)
+
+        # Dedup certificazioni (es. BLS/BLSD)
+        self._deduplicate_certifications(data)
+
+        # Summary fallback se mancante
+        if not data.summary:
+            self._extract_summary_fallback(data)
+
+        # Flag job correnti, country, pulizia date
+        self._detect_is_current_jobs(data)
+        self._enrich_country_info(data)
+        self._clean_date_fields(data)
+
+        # Spans di spiegabilità (XAI)
+        self._extract_spans(data)
+        data.collect_all_spans()
+
+        # GDPR
+        data.gdpr_consent = (
+            "gdpr" in data.full_text[-2000:].lower() if data.full_text else False
+        )
+
+        # Confidenza sezioni e warning qualità
+        data.detect_missing_sections()
+        data.compute_section_confidence()
+        data.detect_low_confidence_sections_v2()
 
     def _extract_experience_llm(self, data: ParsedDocument, max_experiences: int = 6) -> None:
         """Usa l'LLM per estrarre esperienze lavorative strutturate.
@@ -377,7 +876,12 @@ class OllamaCVParser:
             "[ {\"title\": \"Ruolo\", \"company\": \"Azienda\", "
             "\"city\": \"Città\", \"country\": \"Paese\", "
             "\"start_date\": \"YYYY-MM\", \"end_date\": \"YYYY-MM\" o null, "
-            "\"is_current\": true/false, \"description\": \"Descrizione breve\" }, ... ]\n\n"
+            "\"is_current\": true/false, \"description\": \"Descrizione breve (2-4 frasi) delle principali attività e responsabilità\" }, ... ]\n\n"
+            "Per OGNI esperienza che estrai DEVI compilare il campo description, "
+            "riassumendo i bullet point e le frasi del CV relative a quel ruolo. "
+            "Evita di inserire qui l'intero CV: riassumi solo l'essenziale.\n\n"
+            "NON includere in questo elenco titoli di studio, certificazioni o sezioni come 'Competenze Tecniche' o 'Competenze Trasversali': "
+            "solo ruoli lavorativi (es. Senior Recruiter, HR Specialist, Software Engineer, ecc.).\n\n"
             "Se non trovi qualche campo lascialo vuoto o null.\n\n"
             "Testo CV:\n" + source_text
         )
