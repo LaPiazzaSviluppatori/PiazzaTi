@@ -24,7 +24,7 @@ from ..schemas.parsed_document import (
     Span,
 )
 
-from langchain_ollama import OllamaLLM as Ollama
+from langchain_community.llms import Ollama
 
 import os
 import time
@@ -60,25 +60,23 @@ from langchain_community.llms import Ollama
 # ========================================================================
 
 
+
 class OllamaCVParser:
-    """Parser v1.7.4 with enhanced description generation."""
+    """Parser v2.1.1-ULTIMATE (CONSERVATIVE) - adattato per backend."""
 
     def __init__(self, model: str = "llama3.2:3b", base_url: str = None):
         self.model = model
-        self.base_url = (
-            base_url or os.getenv("OLLAMA_BASE_URL") or "http://localhost:11434"
-        )
-        print(f"Initializing parser v1.7.4 FINAL...")
-        print(f"  Using Ollama base_url: {self.base_url}")
+        self.base_url = base_url or os.getenv("OLLAMA_BASE_URL") or "http://localhost:11434"
         try:
             self.llm = Ollama(
                 model=model,
                 base_url=self.base_url,
                 temperature=0.0,
-                num_predict=12000,
-                top_k=10,
+                num_predict=6000,
+                num_ctx=4096,
+                top_k=5,
                 top_p=0.9,
-                repeat_penalty=1.1,
+                repeat_penalty=1.2,
             )
             print(f"  ✅ LLM client initialized successfully (model: {model})")
         except Exception as e:
@@ -88,7 +86,7 @@ class OllamaCVParser:
         self._init_language_database()
         self._init_certification_database()
         self._init_skill_keywords()
-        print(f"SUCCESS: Parser v1.7.4 FINAL ready")
+        print(f"SUCCESS: Parser v2.1.1-ULTIMATE ready")
 
 
     def _init_language_database(self):
