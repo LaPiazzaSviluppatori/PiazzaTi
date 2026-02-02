@@ -464,22 +464,57 @@ const Index = () => {
     }
   };
 
-  // Job description creation
-  const handleCreateJd = (jd: Omit<JobDescription, "jd_id">) => {
-    const newJd: JobDescription = {
-      ...jd,
-      jd_id: `jd${Date.now()}`,
-    };
-    setJobDescriptions((prev) => [newJd, ...prev]);
-    const logEntry: AuditLogEntry = {
-      id: `a${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      action: "jd_created",
-      user: "current.user@company.it",
-      details: `Creata JD: ${newJd.title}`,
-      deiCompliant: true,
-    };
-    setAuditLog((prev) => [logEntry, ...prev]);
+  // Job description creation (persistente su backend)
+  const handleCreateJd = async (jd: Omit<JobDescription, "jd_id">) => {
+    try {
+      const payload = {
+        title: jd.title,
+        description: jd.description,
+        language: "it",
+        requirements: jd.requirements ?? [],
+        nice_to_have: jd.nice_to_have ?? [],
+        department: jd.department,
+        company: jd.company,
+        location: jd.location,
+        constraints: jd.constraints,
+        dei_requirements: jd.dei_requirements,
+        metadata: jd.metadata,
+      };
+
+      const response = await fetch("/api/jd/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        throw new Error("Errore nel salvataggio della JD");
+      }
+
+      const data = await response.json();
+      const backendId: string = data.id || `jd${Date.now()}`;
+
+      const newJd: JobDescription = {
+        ...jd,
+        jd_id: backendId,
+      };
+
+      setJobDescriptions((prev) => [newJd, ...prev]);
+
+      const logEntry: AuditLogEntry = {
+        id: `a${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        action: "jd_created",
+        user: "current.user@company.it",
+        details: `Creata JD: ${newJd.title}`,
+        deiCompliant: true,
+      };
+      setAuditLog((prev) => [logEntry, ...prev]);
+
+      toast({ title: "JD salvata", description: "La job description è stata salvata nel sistema." });
+    } catch (err) {
+      toast({ title: "Errore JD", description: String(err), variant: "destructive" });
+    }
   };
 
   // Shortlist close

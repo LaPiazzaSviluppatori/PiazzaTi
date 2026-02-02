@@ -45,7 +45,7 @@ export const DiscoverSection = ({
   };
 
   // Calcola i match solo se c'è un candidato attivo
-    let matchedJd: Array<{ jd: JobDescription; score: number; mustRequirements: string[]; niceRequirements: string[] }> = [];
+  let matchedJd: Array<{ jd: JobDescription; score: number; mustRequirements: string[]; niceRequirements: string[] }> = [];
   if (activeCandidate) {
     matchedJd = jobDescriptions
       .map((jd) => {
@@ -66,6 +66,43 @@ export const DiscoverSection = ({
       .sort((a, b) => b.score - a.score)
       .slice(0, 20);
   }
+
+  const handleApplyNow = async (jdId: string) => {
+    if (!activeCandidate) {
+      toast({ title: "Nessun candidato attivo", description: "Seleziona prima un candidato.", variant: "destructive" });
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/match_cv_jd", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cv_path: activeCandidate.id, jd_path: jdId }),
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || "Errore dal servizio di matching");
+      }
+
+      const result = await response.json();
+      const score = Math.round(result.score ?? result.overall_score ?? 0);
+
+      toast({
+        title: "Match calcolato",
+        description: `Score da motore NLP: ${score}%`,
+      });
+
+      // Notifica opzionale al chiamante
+      onEvaluateMatch(jdId);
+    } catch (err) {
+      toast({
+        title: "Errore match",
+        description: String(err),
+        variant: "destructive",
+      });
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -191,7 +228,14 @@ export const DiscoverSection = ({
                   </ul>
                 </div>
                 <div className="flex gap-2 mt-2">
-                  <Button size="sm" className="flex-1" variant="default">Candidati ora</Button>
+                  <Button
+                    size="sm"
+                    className="flex-1"
+                    variant="default"
+                    onClick={() => handleApplyNow(jd.jd_id)}
+                  >
+                    Candidati ora
+                  </Button>
                   <Button size="sm" className="flex-1" variant="outline">Aggiungi ai preferiti</Button>
                 </div>
               </Card>
