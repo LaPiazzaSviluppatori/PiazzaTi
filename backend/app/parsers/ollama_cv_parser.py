@@ -433,6 +433,9 @@ class OllamaCVParser:
             if fallback_exps:
                 data.experience.extend(fallback_exps)
 
+        # Pulisci eventuali voci che in realtà sono titoli di studio o sezioni
+        self._filter_experiences_remove_education_like(data)
+
     def _extract_projects_llm(self, data: ParsedDocument, max_projects: int = 5) -> None:
         """Usa l'LLM per estrarre progetti rilevanti (personali o lavorativi).
 
@@ -805,6 +808,41 @@ class OllamaCVParser:
         if current_exp and current_exp.get('title'):
             experiences.append(Experience(**current_exp))
         return experiences[:2]
+
+    def _filter_experiences_remove_education_like(self, data: ParsedDocument) -> None:
+        """Rimuove esperienze che in realtà sono titoli di studio o intestazioni.
+
+        Capita che l'LLM etichetti come esperienza voci come
+        "Laurea Magistrale in ..." o "Competenze Tecniche" senza date/azienda.
+        Le filtriamo per non sporcare la timeline delle esperienze.
+        """
+        if not data.experience:
+            return
+
+        education_like_keywords = [
+            'laurea', 'bachelor', 'master', 'msc', 'm.sc', 'phd', 'dottorato',
+            'diploma', 'degree', 'licenza', 'liceo', 'istituto tecnico',
+        ]
+        section_heading_keywords = [
+            'competenze tecniche', 'competenze trasversali', 'competenze', 'skills',
+        ]
+
+        cleaned: List[Experience] = []
+        for exp in data.experience:
+            title = (exp.title or '').strip().lower()
+            company = (exp.company or '').strip()
+            has_dates = bool((exp.start_date or '').strip() or (exp.end_date or '').strip())
+
+            is_education_like = any(kw in title for kw in education_like_keywords)
+            is_section_heading_like = any(kw in title for kw in section_heading_keywords)
+
+            # Se sembra un titolo di studio o un'intestazione, senza azienda e senza date, scarta
+            if not company and not has_dates and (is_education_like or is_section_heading_like):
+                continue
+
+            cleaned.append(exp)
+
+        data.experience = cleaned
 
     def _find_experience_section(self, text: str, max_chars: int = 4000) -> Optional[str]:
         text_lower = text.lower()
