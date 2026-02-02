@@ -1,10 +1,13 @@
+import os
 import subprocess
 import time
 
 import requests
 from fastapi import FastAPI
 
-OLLAMA_URL = "http://127.0.0.1:11434"
+# Usa OLLAMA_BASE_URL se presente (coerente con il parser),
+# altrimenti fallback a localhost per ambienti non containerizzati.
+OLLAMA_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
 
 
 def check_ollama_api(timeout: int = 2) -> bool:

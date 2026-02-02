@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List, Dict, Tuple, Union
 from datetime import datetime
 from enum import Enum
+import os
 import re
 import json
 import uuid
@@ -280,12 +281,20 @@ def timeout_handler(signum, frame):
 
 
 class OllamaCVParser:
-    def __init__(self, model: str = "llama3.2:3b", base_url: str = "http://localhost:11434"):
+    def __init__(self, model: str = "llama3.2:3b", base_url: Optional[str] = None):
+        """Parser CV basato su Ollama.
+
+        Se base_url non è passato, legge OLLAMA_BASE_URL dall'ambiente
+        (come configurato in docker-compose) e solo in ultima istanza
+        usa http://localhost:11434.
+        """
         self.model = model
-        self.base_url = base_url
+        # Usa env OLLAMA_BASE_URL se presente, altrimenti default locale
+        resolved_base_url = base_url or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        self.base_url = resolved_base_url
         self.llm = OllamaLLM(
             model=model,
-            base_url=base_url,
+            base_url=resolved_base_url,
             temperature=0.0,
             num_predict=6000,
             num_ctx=4096,
@@ -767,7 +776,16 @@ class OllamaCVParser:
 
     def _extract_experience_section_based(self, text: str) -> List[Experience]:
         experiences = []
-        exp_section = self._find_section(text, ['esperienza lavorativa', 'work experience', 'experience'])
+        exp_section = self._find_section(
+            text,
+            [
+                'esperienza lavorativa',
+                'esperienze lavorative',
+                'esperienze professionali',
+                'work experience',
+                'experience',
+            ],
+        )
         if not exp_section:
             return experiences
 
@@ -790,7 +808,14 @@ class OllamaCVParser:
 
     def _find_experience_section(self, text: str, max_chars: int = 4000) -> Optional[str]:
         text_lower = text.lower()
-        indicators = ['esperienza lavorativa', 'work experience', 'experience', 'employment history']
+        indicators = [
+            'esperienza lavorativa',
+            'esperienze lavorative',
+            'esperienze professionali',
+            'work experience',
+            'experience',
+            'employment history',
+        ]
         for indicator in indicators:
             idx = text_lower.find(indicator)
             if idx != -1:
