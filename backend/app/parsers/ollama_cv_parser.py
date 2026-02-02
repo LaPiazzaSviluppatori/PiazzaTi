@@ -153,6 +153,9 @@ class ParsedDocument(BaseModel):
     document_type: DocumentType
     file_sha256: Optional[str] = None
 
+    # Identificativo utente (quando disponibile) associato al CV
+    user_id: Optional[str] = None
+
     personal_info: PersonalInfo = Field(default_factory=PersonalInfo)
 
     summary: Optional[str] = None
@@ -876,9 +879,12 @@ Output ONLY valid JSON:"""
             "[ {\"title\": \"Ruolo\", \"company\": \"Azienda\", "
             "\"city\": \"Città\", \"country\": \"Paese\", "
             "\"start_date\": \"YYYY-MM\", \"end_date\": \"YYYY-MM\" o null, "
-            "\"is_current\": true/false, \"description\": \"Descrizione breve (2-4 frasi) delle principali attività e responsabilità\" }, ... ]\n\n"
+            "\"is_current\": true/false, \"description\": \"Descrizione breve (2-4 frasi) delle principali attività e responsabilità\", "
+            "\"responsibilities\": [\"Responsabilità 1\", \"Responsabilità 2\"] }, ... ]\n\n"
             "Per OGNI esperienza che estrai DEVI compilare il campo description, "
             "riassumendo i bullet point e le frasi del CV relative a quel ruolo. "
+            "Inoltre, se presenti nel CV, estrai le principali responsabilità come elenco di frasi sintetiche "
+            "nel campo responsibilities (array di stringhe, max 5 elementi per esperienza).\n\n"
             "Evita di inserire qui l'intero CV: riassumi solo l'essenziale.\n\n"
             "NON includere in questo elenco titoli di studio, certificazioni o sezioni come 'Competenze Tecniche' o 'Competenze Trasversali': "
             "solo ruoli lavorativi (es. Senior Recruiter, HR Specialist, Software Engineer, ecc.).\n\n"
@@ -914,6 +920,20 @@ Output ONLY valid JSON:"""
                 if not isinstance(item, dict):
                     continue
                 try:
+                    # Normalizza responsibilities a lista di stringhe
+                    raw_responsibilities = item.get("responsibilities") or []
+                    responsibilities: List[str] = []
+                    if isinstance(raw_responsibilities, list):
+                        responsibilities = [
+                            str(r).strip()
+                            for r in raw_responsibilities
+                            if str(r).strip()
+                        ]
+                    elif isinstance(raw_responsibilities, str):
+                        # Eventuale stringa con voci separate da punto o punto e virgola
+                        parts = re.split(r"[\.;]\s+", raw_responsibilities)
+                        responsibilities = [p.strip() for p in parts if p.strip()]
+
                     exp = Experience(
                         title=(item.get("title") or "").strip() or None,
                         company=(item.get("company") or "").strip() or None,
@@ -923,9 +943,10 @@ Output ONLY valid JSON:"""
                         end_date=(item.get("end_date") or "").strip() or None,
                         is_current=item.get("is_current", False),
                         description=(item.get("description") or "").strip() or None,
+                        responsibilities=responsibilities,
                     )
                     # Filtra entry completamente vuote
-                    if not (exp.title or exp.company or exp.description):
+                    if not (exp.title or exp.company or exp.description or exp.responsibilities):
                         continue
                     data.experience.append(exp)
                 except Exception:

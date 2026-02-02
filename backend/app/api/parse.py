@@ -333,10 +333,12 @@ if MULTIPART_AVAILABLE:
                         if hasattr(doc, "model_dump")
                         else getattr(doc, "dict", lambda: {})()
                     )
-                    
-                    # Assicura che l'id sia sempre presente nei dati parsed
+
+                    # Assicura che l'ID utente sia sempre presente nel JSON parsed
                     if user_id and isinstance(parsed_data, dict):
+                        # Per retrocompatibilità manteniamo anche "id"
                         parsed_data["id"] = user_id
+                        parsed_data["user_id"] = user_id
                     _task_results[task_id] = {
                         "status": "completed",
                         "started_at": _task_results[task_id]["started_at"],
@@ -403,9 +405,11 @@ if MULTIPART_AVAILABLE:
                 )
 
                 # Ensure all values (e.g. datetimes) are JSON-serializable
-                # Assicura che l'id sia sempre presente nei dati parsed
+                # Assicura che l'ID utente sia sempre presente nei dati parsed
                 if user_id and isinstance(parsed, dict):
+                    # Per retrocompatibilità manteniamo anche "id"
                     parsed["id"] = user_id
+                    parsed["user_id"] = user_id
                 return JSONResponse(
                     status_code=200,
                     content={"parsed": jsonable_encoder(parsed), "summary": text_summary},
