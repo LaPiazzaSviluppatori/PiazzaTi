@@ -1,14 +1,18 @@
 import os
-import requests
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 router = APIRouter()
 
-# Servizio esterno di matching basato su NLP/single_match.py
-# Di default si aspetta un container raggiungibile come "matcher" sulla rete Docker,
-# con endpoint GET /api/match_cv_jd?user_id=...&jd_id=...
-MATCHER_URL = os.getenv("MATCHER_URL", "http://matcher:8000/api/match_cv_jd")
+# Integrazione matcher basato su NLP/single_match.py
+# Possiamo usarlo come servizio HTTP esterno (legacy) oppure
+# richiamare direttamente la funzione Python compare_cv_with_jd.
+
+try:
+    # Import diretto dal modulo NLP (stesso repo)
+    from NLP.single_match import compare_cv_with_jd  # type: ignore
+except Exception:  # pragma: no cover - dipende dal PYTHONPATH
+    compare_cv_with_jd = None  # type: ignore
 
 
 class MatchRequest(BaseModel):
@@ -18,15 +22,25 @@ class MatchRequest(BaseModel):
 
 @router.post("/match_cv_jd")
 async def proxy_match_cv_jd(request: MatchRequest):
-    """Proxy verso il servizio di matching (single_match.py).
+    """Esegue il match CV↔JD usando direttamente la logica NLP/single_match.
 
-    Riceve cv_path/jd_path dal frontend e li inoltra come
-    user_id/jd_id al servizio esterno esposto da single_match.py.
+    Riceve dal frontend cv_path/jd_path che corrispondono a
+    user_id/jd_id presenti nei dataset del matcher.
     """
+    if compare_cv_with_jd is None:
+        # Import fallito: ambiente non configurato correttamente
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Matcher interno non disponibile: impossibile importare NLP.single_match. "
+                "Verifica Python path e presenza della cartella NLP nel container backend."
+            ),
+        )
+
     try:
-        params = {"user_id": request.cv_path, "jd_id": request.jd_path}
-        response = requests.get(MATCHER_URL, params=params, timeout=30)
-        response.raise_for_status()
-        return response.json()
-    except requests.RequestException as e:
-        raise HTTPException(status_code=502, detail=f"Matcher service error: {str(e)}")
+        # Chiamata diretta alla funzione principale del matcher
+        result = compare_cv_with_jd(user_id=request.cv_path, jd_id=request.jd_path)
+        return result
+    except Exception as e:
+        # Propaga l'errore al frontend con codice 502 come in precedenza
+        raise HTTPException(status_code=502, detail=f"Matcher internal error: {str(e)}")

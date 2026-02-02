@@ -84,6 +84,7 @@ services:
       - "8000:8000"
     volumes:
       - ./backend:/app
+      - ./NLP:/app/NLP:ro
       - /var/lib/docker/piazzati-data:/app/NLP/data
     depends_on:
       postgres:
