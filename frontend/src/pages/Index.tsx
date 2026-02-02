@@ -277,14 +277,45 @@ const Index = () => {
   // Tipo per il parsed document dal backend
 // ...existing imports...
 
-  type ParsedCandidateBackend = Partial<Candidate> & {
+  type ParsedCandidateBackend = {
+    // Struttura che arriva dal backend (ParsedDocument)
     personal_info?: {
       full_name?: string;
       email?: string;
       phone?: string;
+      city?: string;
+      country?: string;
     };
-    experience?: Experience[];
-    experiences?: Experience[];
+    summary?: string;
+    skills?: { name?: string; level?: Skill["level"]; }[];
+    experience?: {
+      title?: string;
+      company?: string;
+      city?: string;
+      country?: string;
+      start_date?: string;
+      end_date?: string;
+      description?: string;
+    }[];
+    experiences?: ParsedCandidateBackend["experience"];
+    projects?: Project[];
+    id?: string;
+    email?: string;
+    phone?: string;
+    name?: string;
+    location?: string;
+  };
+
+  const normalizeParsedSkills = (
+    skills?: { name?: string; level?: Skill["level"]; }[]
+  ): Skill[] => {
+    if (!skills) return [];
+    const result: Skill[] = [];
+    for (const s of skills) {
+      if (!s.name) continue;
+      result.push({ name: s.name, level: s.level });
+    }
+    return result;
   };
 
   const handleCandidateParsed = (updated: ParsedCandidateBackend) => {
@@ -293,19 +324,33 @@ const Index = () => {
       const fullName = updated.personal_info?.full_name || updated.name || "";
       const email = updated.personal_info?.email || updated.email || "";
       const phone = updated.personal_info?.phone || updated.phone || "";
-      const experiences = updated.experience || updated.experiences || [];
-      if (prev.length === 0) {
-        const newId = `c${Date.now()}`;
+      const rawExperiences = updated.experience || updated.experiences || [];
+      const experiences: Experience[] = rawExperiences.map((e) => ({
+        title: e.title || "",
+        company: e.company || "",
+        period: [e.start_date, e.end_date].filter(Boolean).join(" - "),
+        description: e.description || "",
+      }));
+
+      const locationParts: string[] = [];
+      if (updated.personal_info?.city) locationParts.push(updated.personal_info.city);
+      if (updated.personal_info?.country) locationParts.push(updated.personal_info.country);
+      const location = updated.location || locationParts.join(", ");
+      const targetIdFromParsed = updated.id || currentCandidate?.id || `c${Date.now()}`;
+      const normalizedSkills = normalizeParsedSkills(updated.skills);
+
+      if (prev.length === 0 || !prev.some(c => c.id === targetIdFromParsed)) {
+        const newId = targetIdFromParsed;
         const created: Candidate = {
           id: newId,
           name: fullName,
           email,
           phone,
-          location: updated.location || "",
+          location,
           connections: 0,
           optInTags: [],
           summary: updated.summary || "",
-          skills: updated.skills || [],
+          skills: normalizedSkills,
           experiences,
           projects: updated.projects || [],
           posts: [],
@@ -314,8 +359,8 @@ const Index = () => {
         return [created];
       }
       if (!currentCandidate) return prev;
-      const targetId = updated.id || currentCandidate.id;
-      const parsedSkills = updated.skills || [];
+      const targetId = targetIdFromParsed || currentCandidate.id;
+      const parsedSkills = normalizeParsedSkills(updated.skills);
       let newSkills: Skill[] = [];
       if (parsedSkills.length > 0) {
         const skillMap = new Map<string, Skill>();
@@ -335,6 +380,7 @@ const Index = () => {
               name: fullName,
               email,
               phone,
+              location,
               experiences,
               skills: newSkills
             }
@@ -494,11 +540,17 @@ const Index = () => {
       if (!res.ok) {
         let errorMsg = "Credenziali errate o utente inesistente";
         try {
-          const err = await res.json();
-          errorMsg = err.detail || errorMsg;
-        } catch {
           const text = await res.text();
-          errorMsg = text || errorMsg;
+          if (text) {
+            try {
+              const err = JSON.parse(text);
+              errorMsg = (err && err.detail) || errorMsg;
+            } catch {
+              errorMsg = text || errorMsg;
+            }
+          }
+        } catch {
+          // fallback al messaggio di default
         }
         toast({ title: "Login fallito", description: errorMsg, variant: "destructive" });
         return;

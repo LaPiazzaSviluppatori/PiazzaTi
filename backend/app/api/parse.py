@@ -127,7 +127,7 @@ async def get_parser_status():
     
     return {
         "parser_initialized": parser is not None,
-        "parser_version": "v1.7.4 FINAL",
+        "parser_version": "v2.1.1-ULTIMATE",
         "llm_status": llm_status
     }
 
