@@ -390,11 +390,13 @@ const Index = () => {
   };
 
   // Upload e parsing CV centralizzato e robusto
-  const handleUploadCV = async (cvFile: File | null, userId?: string) => {
+  const handleUploadCV = async (cvFile: File | null, _userId?: string) => {
     if (!cvFile) {
       toast({ title: "Seleziona un file", description: "Carica un file CV", variant: "destructive" });
       return;
     }
+    // Usa sempre l'user_id dal JWT corrente se disponibile
+    const effectiveUserId = decodeJwtUserId(jwtToken);
     setIsParsing(true);
     setProgressPct(0);
     setProgressLabel("");
@@ -402,8 +404,8 @@ const Index = () => {
     if (parsingTimer) clearTimeout(parsingTimer);
     const formData = new FormData();
     formData.append("file", cvFile);
-    if (userId) {
-      formData.append("user_id", userId);
+    if (effectiveUserId) {
+      formData.append("user_id", effectiveUserId);
     }
     try {
       const response = await fetch("/api/parse/upload", { method: "POST", body: formData });
