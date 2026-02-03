@@ -278,7 +278,7 @@ export const CandidateSection = ({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          cv_path: userId,
+          cv_path: user_id,
           jd_path: selectedJdId
         })
       });
