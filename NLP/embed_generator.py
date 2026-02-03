@@ -50,6 +50,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Configura una cache HuggingFace in una directory sicuramente scrivibile nel container
+HF_CACHE_DIR = Path(os.getenv("HF_HOME", "/opt/piazzati/hf-cache"))
+HF_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+os.environ["HF_HOME"] = str(HF_CACHE_DIR)
+
 
 def setup_directories():
     EMBEDDINGS_DIR.mkdir(parents=True, exist_ok=True)

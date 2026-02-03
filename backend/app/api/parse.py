@@ -40,6 +40,9 @@ def _save_parsed_cv_to_db(db: Session, user_id: str, doc_parsed) -> Document:
     else:
         parsed_json = getattr(doc_parsed, "__dict__", {}).copy()
 
+    # Assicura che parsed_json contenga solo tipi JSON-serializzabili
+    parsed_json = jsonable_encoder(parsed_json)
+
     # Sostituisci il vecchio CV (is_latest)
     old_cv = (
         db.query(Document)
