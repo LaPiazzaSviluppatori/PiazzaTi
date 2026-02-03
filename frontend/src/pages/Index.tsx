@@ -26,14 +26,8 @@ import {
 } from "@/types";
 import { toast } from "@/hooks/use-toast";
 
-import CryptoJS from "crypto-js";
 import { jwtDecode } from "jwt-decode";
 import { User, Building2, GitBranch, Compass } from "lucide-react";
-
-
-function getUserId(email: string): string {
-  return CryptoJS.SHA256(email).toString(CryptoJS.enc.Hex);
-}
 
 interface JwtPayload {
   user_id?: string;
@@ -279,6 +273,7 @@ const Index = () => {
 
   type ParsedCandidateBackend = {
     // Struttura che arriva dal backend (ParsedDocument)
+    user_id?: string;
     personal_info?: {
       full_name?: string;
       email?: string;
@@ -336,7 +331,8 @@ const Index = () => {
       if (updated.personal_info?.city) locationParts.push(updated.personal_info.city);
       if (updated.personal_info?.country) locationParts.push(updated.personal_info.country);
       const location = updated.location || locationParts.join(", ");
-      const targetIdFromParsed = updated.id || currentCandidate?.id || `c${Date.now()}`;
+      // Usa user_id come identificatore backend del candidato (non pi f8 l'alias id)
+      const targetIdFromParsed = updated.user_id || currentCandidate?.id || `c${Date.now()}`;
       const normalizedSkills = normalizeParsedSkills(updated.skills);
 
       if (prev.length === 0 || !prev.some(c => c.id === targetIdFromParsed)) {
@@ -390,13 +386,13 @@ const Index = () => {
   };
 
   // Upload e parsing CV centralizzato e robusto
-  const handleUploadCV = async (cvFile: File | null, _userId?: string) => {
+  const handleUploadCV = async (cvFile: File | null, user_id?: string) => {
     if (!cvFile) {
       toast({ title: "Seleziona un file", description: "Carica un file CV", variant: "destructive" });
       return;
     }
-    // Usa sempre l'user_id dal JWT corrente se disponibile
-    const effectiveUserId = decodeJwtUserId(jwtToken);
+    // Usa prima l'user_id passato dal componente, altrimenti quello dal JWT corrente
+    const effectiveUserId = user_id || decodeJwtUserId(jwtToken);
     setIsParsing(true);
     setProgressPct(0);
     setProgressLabel("");
@@ -764,7 +760,7 @@ const Index = () => {
                   onConnect={handleConnect}
                   onOpenProfile={handleOpenProfile}
                   onCandidateParsed={handleCandidateParsed}
-                  userId={decodeJwtUserId(jwtToken)}
+                  user_id={decodeJwtUserId(jwtToken)}
                   isParsing={isParsing}
                   progressPct={progressPct}
                   progressLabel={progressLabel}

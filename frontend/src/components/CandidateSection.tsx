@@ -10,12 +10,6 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Candidate, JobDescription, Feedback, Project, OptInTag } from "@/types";
-import CryptoJS from "crypto-js";
-
-// Funzione per generare uno userId univoco e consistente da email
-function getUserId(email: string): string {
-  return CryptoJS.SHA256(email).toString(CryptoJS.enc.Hex);
-}
 type ParsedSkill = string | { name?: string };
 type ParsedExperience = {
   title: string;
@@ -48,11 +42,11 @@ interface CandidateSectionProps {
   onConnect: (candidateId: string) => void;
   onOpenProfile: (candidateId: string) => void;
   onCandidateParsed?: (updated: Partial<Candidate>) => void;
-  userId?: string; // SHA256 user id passed from parent
+  user_id?: string; // backend user_id (UUID) passato dal parent
   isParsing: boolean;
   progressPct: number;
   progressLabel?: string;
-  onUploadCV?: (cvFile: File | null, userId?: string) => Promise<void>;
+  onUploadCV?: (cvFile: File | null, user_id?: string) => Promise<void>;
 }
 
 export const CandidateSection = ({
@@ -72,7 +66,7 @@ export const CandidateSection = ({
   onConnect,
   onOpenProfile,
   onCandidateParsed,
-  userId,
+  user_id,
   isParsing,
   progressPct,
   progressLabel = "",
@@ -601,7 +595,7 @@ export const CandidateSection = ({
           <Button
             variant="outline"
             className="w-full mt-2"
-            onClick={() => onUploadCV && onUploadCV(cvFile, userId)}
+            onClick={() => onUploadCV && onUploadCV(cvFile, user_id)}
             disabled={uploading || !cvFile || !onUploadCV}
           >
             <Upload className="h-4 w-4 mr-2" />
