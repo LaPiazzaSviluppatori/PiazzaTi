@@ -220,24 +220,7 @@ jobs:
             # Install nginx conf if uploaded
             if [ -f /tmp/piazzati_nginx.conf ]; then
               mv /tmp/piazzati_nginx.conf /etc/nginx/conf.d/piazzati_parse_grafana_home.conf || true
-            fi
-
-            # Try to validate nginx config and reload so the new conf takes effect immediately
-            if command -v nginx >/dev/null 2>&1; then
-              echo "[remote] testing nginx configuration"
-              nginx -t || true
-              # Reload nginx using systemctl if available, otherwise fall back to nginx -s reload
-              if command -v systemctl >/dev/null 2>&1; then
-                systemctl reload nginx || nginx -s reload || true
-              else
-                nginx -s reload || true
-              fi
-
-              # Print the installed conf and the target web directory for diagnostics
-              echo "[remote] installed nginx conf: /etc/nginx/conf.d/piazzati_parse_grafana_home.conf"
-              cat /etc/nginx/conf.d/piazzati_parse_grafana_home.conf || true
-              echo "[remote] /var/www/piazzati listing"
-              ls -la /var/www/piazzati || true
+              echo "[remote] installed nginx conf to /etc/nginx/conf.d/piazzati_parse_grafana_home.conf"
             fi
 
             # Create compose override atomically
@@ -246,6 +229,12 @@ jobs:
             mv "$tmpfile" /opt/piazzati/docker-compose.deploy.yml
             echo "[remote] wrote /opt/piazzati/docker-compose.deploy.yml"
 
+            # Clean up Docker resources before pulling to free disk space
+            echo "[remote] Cleaning up Docker resources to free disk space"
+            docker system prune -af --volumes || true
+            echo "[remote] Disk space after cleanup:"
+            df -h /var/lib/docker || df -h / || true
+
             # Try to pull with limited retries
             attempts=0
             until docker compose -f docker-compose.yml -f docker-compose.deploy.yml pull piazzati-backend; do
@@ -253,9 +242,14 @@ jobs:
               echo "[remote] docker pull attempt $attempts failed"
               if [ "$attempts" -ge 3 ]; then
                 echo "[remote] docker pull failed after $attempts attempts" >&2
+                echo "[remote] Disk space status:"
+                df -h || true
                 docker compose logs --no-color piazzati-backend --tail 200 || true
                 exit 1
               fi
+              # Clean up again between retries if pull fails
+              echo "[remote] Attempting additional cleanup before retry"
+              docker system prune -f || true
               sleep $((attempts * 5))
             done
 
@@ -267,6 +261,40 @@ jobs:
             # Verify critical services are running
             echo "[remote] Checking service status"
             docker compose -f docker-compose.yml -f docker-compose.deploy.yml ps
+
+            # Wait for containers to be fully ready with health check
+            echo "[remote] Waiting for containers to be ready..."
+            container_ready=0
+            for i in {1..10}; do
+              if docker compose -f docker-compose.yml -f docker-compose.deploy.yml ps --filter "status=running" | grep -q piazzati-backend; then
+                container_ready=1
+                echo "[remote] Containers are ready after $i attempts"
+                break
+              fi
+              echo "[remote] Waiting for containers... attempt $i/10"
+              sleep 2
+            done
+            if [ "$container_ready" -eq 0 ]; then
+              echo "[remote] WARNING: Containers may not be fully ready"
+            fi
+
+            # Now that containers are running, test and reload nginx configuration
+            if command -v nginx >/dev/null 2>&1; then
+              echo "[remote] Testing nginx configuration (after containers are started)"
+              if nginx -t; then
+                echo "[remote] Nginx config is valid, reloading..."
+                # Reload nginx using systemctl if available, otherwise fall back to nginx -s reload
+                if command -v systemctl >/dev/null 2>&1; then
+                  systemctl reload nginx || nginx -s reload || true
+                else
+                  nginx -s reload || true
+                fi
+                echo "[remote] Nginx reloaded successfully"
+              else
+                echo "[remote] WARNING: Nginx config test failed, but continuing with deployment"
+                cat /etc/nginx/conf.d/piazzati_parse_grafana_home.conf || true
+              fi
+            fi
 
             # health check
             max_wait=60
