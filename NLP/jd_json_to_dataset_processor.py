@@ -21,7 +21,7 @@ from datetime import datetime
 import pandas as pd
 
 
-INPUT_FOLDER = "/var/lib/docker/piazzati-data/jds"
+INPUT_FOLDER = "data/jds"  # percorso relativo a BASE_DIR/NLP, montato come /app/NLP/data nel container
 OUTPUT_FOLDER = "Dataset"
 OUTPUT_FILENAME = "jd_dataset.csv"
 
