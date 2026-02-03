@@ -262,13 +262,25 @@ jobs:
             echo "[remote] Checking service status"
             docker compose -f docker-compose.yml -f docker-compose.deploy.yml ps
 
-            # Wait a moment for containers to be fully ready
+            # Wait for containers to be fully ready with health check
             echo "[remote] Waiting for containers to be ready..."
-            sleep 5
+            container_ready=0
+            for i in {1..10}; do
+              if docker compose -f docker-compose.yml -f docker-compose.deploy.yml ps --filter "status=running" | grep -q piazzati-backend; then
+                container_ready=1
+                echo "[remote] Containers are ready after $i attempts"
+                break
+              fi
+              echo "[remote] Waiting for containers... attempt $i/10"
+              sleep 2
+            done
+            if [ "$container_ready" -eq 0 ]; then
+              echo "[remote] WARNING: Containers may not be fully ready"
+            fi
 
             # Now that containers are running, test and reload nginx configuration
             if command -v nginx >/dev/null 2>&1; then
-              echo "[remote] Testing nginx configuration (after containers started)"
+              echo "[remote] Testing nginx configuration (after containers are started)"
               if nginx -t; then
                 echo "[remote] Nginx config is valid, reloading..."
                 # Reload nginx using systemctl if available, otherwise fall back to nginx -s reload
