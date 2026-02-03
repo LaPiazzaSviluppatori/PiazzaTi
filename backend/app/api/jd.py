@@ -20,6 +20,45 @@ INPUT_FOLDER = "/app/NLP/data/jds"
 router = APIRouter()
 
 
+def _save_jd_json_and_start_pipeline(jd_data: dict) -> str:
+    """Salva il JSON JD nella cartella condivisa NLP e avvia la pipeline.
+
+    Usato sia da /jd/create (flusso principale) sia da /jd/upload.
+    """
+
+    if not isinstance(jd_data, dict):
+        jd_data = dict(jd_data)
+
+    jd_id = jd_data.get("jd_id")
+    if not jd_id:
+        raise HTTPException(status_code=400, detail="jd_id mancante per salvataggio JD")
+
+    os.makedirs(INPUT_FOLDER, exist_ok=True)
+    safe_id = str(jd_id).replace(os.sep, "_")
+    filename = f"jd_{safe_id}.json"
+    filepath = os.path.join(INPUT_FOLDER, filename)
+
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(jd_data, f, ensure_ascii=False, indent=2)
+
+    print(f"[JD PIPELINE] File JD salvato: {filepath}", file=sys.stderr)
+
+    # Lancia la pipeline completa JD (JSON -> dataset -> normalizzazione -> embeddings)
+    try:
+        # In container: __file__ = /app/app/api/jd.py -> project_root = /app
+        from pathlib import Path as _Path
+        project_root = _Path(__file__).resolve().parents[2]
+        subprocess.Popen(
+            ["python", "cron_scripts/batch_processor.py", "--process-jd"],
+            cwd=str(project_root)
+        )
+        print("[JD PIPELINE] Pipeline JD completa avviata", file=sys.stderr)
+    except Exception as e:
+        print(f"[JD PIPELINE] Errore avvio pipeline: {e}", file=sys.stderr)
+
+    return filepath
+
+
 @router.post("/jd/create")
 async def create_jd(request: Request, db: Session = Depends(get_db)):
     """Crea una nuova Job Description (JD) nel database come Document."""
@@ -51,6 +90,14 @@ async def create_jd(request: Request, db: Session = Depends(get_db)):
         db.add(doc)
         db.commit()
         db.refresh(doc)
+
+        # Salva subito anche il JSON per la pipeline NLP e avvia il batch JD
+        try:
+            _save_jd_json_and_start_pipeline(jd_data)
+        except Exception as e:
+            # Non blocca la creazione JD se la pipeline fallisce all'avvio
+            print(f"[JD CREATE] Errore avvio pipeline JD: {e}", file=sys.stderr)
+
         return {"status": "ok", "id": str(doc.id)}
     except HTTPException:
         # Rilancia HTTPException così com'è
@@ -74,25 +121,8 @@ async def upload_jd(request: Request):
                     jd_data["jd_id"] = str(jd_data["id"])
                 else:
                     raise HTTPException(status_code=400, detail="jd_id o id mancante nel payload JD upload")
-        filename = f"jd_{uuid.uuid4().hex}.json"
-        os.makedirs(INPUT_FOLDER, exist_ok=True)
-        filepath = os.path.join(INPUT_FOLDER, filename)
-        with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(jd_data, f, ensure_ascii=False, indent=2)
-        print(f"[JD UPLOAD] File salvato: {filepath}", file=sys.stderr)
-        # Lancia la pipeline completa JD (JSON -> dataset -> normalizzazione -> embeddings)
-        try:
-            # In container: __file__ = /app/app/api/jd.py -> project_root = /app
-            from pathlib import Path as _Path
-            project_root = _Path(__file__).resolve().parents[2]
-            subprocess.Popen(
-                ["python", "cron_scripts/batch_processor.py", "--process-jd"],
-                cwd=str(project_root)
-            )
-            print("[JD UPLOAD] Pipeline JD completa avviata", file=sys.stderr)
-        except Exception as e:
-            print(f"[JD UPLOAD] Errore avvio pipeline: {e}", file=sys.stderr)
-        return JSONResponse({"status": "ok", "filename": filename})
+        filepath = _save_jd_json_and_start_pipeline(jd_data)
+        return JSONResponse({"status": "ok", "filename": os.path.basename(filepath)})
     except PermissionError as e:
         print(f"[JD UPLOAD] PermissionError: {e}", file=sys.stderr)
         return JSONResponse({"status": "error", "detail": "Permission denied", "message": str(e)}, status_code=500)
