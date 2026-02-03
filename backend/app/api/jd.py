@@ -82,10 +82,12 @@ async def upload_jd(request: Request):
         print(f"[JD UPLOAD] File salvato: {filepath}", file=sys.stderr)
         # Lancia la pipeline completa JD (JSON -> dataset -> normalizzazione -> embeddings)
         try:
-            project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            # In container: __file__ = /app/app/api/jd.py -> project_root = /app
+            from pathlib import Path as _Path
+            project_root = _Path(__file__).resolve().parents[2]
             subprocess.Popen(
                 ["python", "cron_scripts/batch_processor.py", "--process-jd"],
-                cwd=project_root
+                cwd=str(project_root)
             )
             print("[JD UPLOAD] Pipeline JD completa avviata", file=sys.stderr)
         except Exception as e:

@@ -44,7 +44,17 @@ logger = logging.getLogger(__name__)
 #     NLP/
 # -----------------------------
 HERE = Path(__file__).resolve().parent            # cron_scripts/
-PROJECT_ROOT = HERE.parent.parent                         # project_root/
+
+# Calcolo robusto della root del progetto:
+# - in ambiente host:   .../PiazzaTi/backend/cron_scripts -> PROJECT_ROOT = .../PiazzaTi
+# - in container:       /app/cron_scripts              -> PROJECT_ROOT = /app
+parent1 = HERE.parent
+parent2 = parent1.parent
+if (parent1 / "NLP").exists():
+    PROJECT_ROOT = parent1
+else:
+    PROJECT_ROOT = parent2
+
 NLP_PATH = PROJECT_ROOT / "NLP"
 BACKEND_PATH = PROJECT_ROOT / "backend"
 
