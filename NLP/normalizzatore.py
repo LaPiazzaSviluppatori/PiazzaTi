@@ -4,7 +4,10 @@ Script di Normalizzazione Dataset CV e JD
 Calcola seniority da anni di esperienza reali invece che da keyword nei titoli.
 Normalizza salary in formato leggibile e gestisce tag DE&I.
 
-AGGIORNAMENTO: aggiunto supporto per campo min_experience_years nelle JD
+CHANGELOG:
+- v3: Aggiunto supporto per campo company_name nelle JD
+- v2: Aggiunto supporto per campo min_experience_years nelle JD
+- v1: Versione iniziale
 """
 
 import json
@@ -45,6 +48,17 @@ SENIORITY_TO_YEARS = {
 # ============================================================================
 
 class SkillOntology:
+    """
+    Gestisce l'ontologia delle skill per la normalizzazione.
+    
+    Scopo: Fornire mappature consistenti per:
+    - Skills tecniche (es. "js" → "JavaScript")
+    - Livelli seniority (es. "sr." → "senior")
+    - Livelli linguistici CEFR (es. "native" → "C2")
+    
+    L'ontologia viene aggiornata automaticamente con le skill non mappate
+    trovate durante il processing, facilitando il mantenimento.
+    """
 
     def __init__(self, ontology_path: Path):
         print(f"Caricamento ontologia da: {ontology_path}")
@@ -58,7 +72,7 @@ class SkillOntology:
         self.cefr_mappings = self.data.get('cefr_mappings', {})
         self.metadata = self.data.get('_metadata', {})
 
-        # Rimuovi commenti
+        # Rimuovi commenti (chiavi che iniziano con _)
         self.skill_mappings = {k: v for k, v in self.skill_mappings.items()
                                if not k.startswith('_')}
         self.seniority_mappings = {k: v for k, v in self.seniority_mappings.items()
@@ -78,6 +92,11 @@ class SkillOntology:
         print()
 
     def normalize_skill(self, skill: str) -> str:
+        """
+        Normalizza una singola skill usando l'ontologia.
+        
+        Esempio: "js" → "JavaScript", "ml" → "Machine Learning"
+        """
         if not skill or pd.isna(skill):
             return ""
 
@@ -93,6 +112,12 @@ class SkillOntology:
         return skill_clean.capitalize()
 
     def normalize_seniority(self, seniority_str: str) -> str:
+        """
+        Normalizza il livello di seniority.
+        
+        Converte varianti come "sr.", "senior level", "5+ years" in
+        valori standard: "junior", "mid", "senior".
+        """
         if not seniority_str or pd.isna(seniority_str):
             return "mid"
 
@@ -110,6 +135,11 @@ class SkillOntology:
         return "mid"
 
     def normalize_cefr(self, level_str: str) -> str:
+        """
+        Normalizza il livello linguistico in formato CEFR.
+        
+        Esempio: "native" → "C2", "fluent" → "C1", "intermediate" → "B1"
+        """
         if not level_str or pd.isna(level_str):
             return "B2"
 
@@ -121,6 +151,7 @@ class SkillOntology:
         return "B2"
 
     def _years_to_seniority(self, years: float) -> str:
+        """Converte anni di esperienza in livello seniority."""
         if years < 2.0:
             return "junior"
         elif years < 5.0:
@@ -129,6 +160,12 @@ class SkillOntology:
             return "senior"
 
     def save_updated_ontology(self):
+        """
+        Salva l'ontologia aggiornata con le nuove skill non mappate.
+        
+        Questo permette di identificare facilmente quali skill
+        necessitano di essere aggiunte alle mappature.
+        """
         print(f"\nAggiornamento ontologia...")
 
         new_unmapped = [
@@ -186,6 +223,15 @@ class SkillOntology:
 # ============================================================================
 
 def parse_date_flexible(date_str: str) -> Optional[datetime]:
+    """
+    Parser flessibile per date in vari formati (IT/EN).
+    
+    Gestisce:
+    - Date standard: "2023-01-15", "15/01/2023"
+    - Mesi italiani: "gennaio 2023"
+    - Valori speciali: "present", "current", "attuale"
+    - Solo anno: "2023"
+    """
     if not date_str or pd.isna(date_str):
         return None
 
@@ -218,6 +264,12 @@ def parse_date_flexible(date_str: str) -> Optional[datetime]:
         return None
 
 def calculate_years_of_experience(experience_str: str) -> float:
+    """
+    Calcola gli anni totali di esperienza da una stringa di esperienze.
+    
+    Input: "Data Scientist @ Company [2022-01 - 2024-05] | Junior Dev @ Startup [2020 - 2022]"
+    Output: 4.3 (anni totali)
+    """
     if not experience_str or pd.isna(experience_str):
         return 0.0
 
@@ -247,6 +299,14 @@ def calculate_years_of_experience(experience_str: str) -> float:
     return round(total_years, 1)
 
 def infer_seniority_from_experience(experience_str: str) -> Tuple[str, float]:
+    """
+    Inferisce il livello di seniority dagli anni di esperienza reali.
+    
+    Questo è più affidabile che basarsi sui titoli (es. "Senior" nel titolo
+    potrebbe non riflettere l'esperienza reale).
+    
+    Returns: (seniority_level, years_of_experience)
+    """
     years = calculate_years_of_experience(experience_str)
 
     if years < 2.0:
@@ -263,6 +323,14 @@ def infer_seniority_from_experience(experience_str: str) -> Tuple[str, float]:
 # ============================================================================
 
 def normalize_skills_string(skills_str: str, ontology: SkillOntology) -> str:
+    """
+    Normalizza una stringa di skills separate da virgola.
+    
+    Operazioni:
+    1. Rimuove informazioni tra parentesi (es. "Python (Advanced)")
+    2. Applica mappatura ontologia
+    3. Rimuove duplicati preservando ordine
+    """
     if not skills_str or pd.isna(skills_str):
         return ""
 
@@ -281,6 +349,12 @@ def normalize_skills_string(skills_str: str, ontology: SkillOntology) -> str:
     return ", ".join(unique_skills)
 
 def normalize_language(lang_str: str, ontology: SkillOntology) -> Tuple[str, str]:
+    """
+    Normalizza una singola lingua con livello.
+    
+    Input: "English (fluent)" o "italiano (madrelingua)"
+    Output: ("English", "C1") o ("Italiano", "C2")
+    """
     if not lang_str or pd.isna(lang_str):
         return ("", "")
 
@@ -294,6 +368,12 @@ def normalize_language(lang_str: str, ontology: SkillOntology) -> Tuple[str, str
     return (lang_str.strip().capitalize(), "B2")
 
 def normalize_languages_string(langs_str: str, ontology: SkillOntology) -> str:
+    """
+    Normalizza una stringa di lingue separate da virgola.
+    
+    Input: "English (fluent), Italian (native)"
+    Output: "English (C1), Italian (C2)"
+    """
     if not langs_str or pd.isna(langs_str):
         return ""
 
@@ -308,6 +388,11 @@ def normalize_languages_string(langs_str: str, ontology: SkillOntology) -> str:
     return ", ".join(normalized)
 
 def extract_salary_range(salary_str: str) -> str:
+    """
+    Pulisce e normalizza una stringa di salary range.
+    
+    Rimuove parole vaghe come "circa", "about", "around".
+    """
     if not salary_str or pd.isna(salary_str):
         return ""
 
@@ -326,17 +411,17 @@ def normalize_min_experience_years(value, seniority: str = None) -> int:
     """
     Normalizza il campo min_experience_years.
     
-    Logica:
+    Logica di fallback:
     1. Se il valore è valido (numero nel range), lo usa
     2. Se mancante/invalido ma c'è seniority, inferisce da seniority
-    3. Altrimenti usa il default
+    3. Altrimenti usa il default (2 anni)
     
     Args:
         value: valore dal CSV (può essere int, float, str, NaN)
         seniority: livello seniority normalizzato (opzionale, per inferenza)
     
     Returns:
-        int: anni di esperienza minimi (nel range configurato)
+        int: anni di esperienza minimi (nel range 1-10)
     """
     # Caso 1: valore valido presente
     if pd.notna(value):
@@ -363,8 +448,11 @@ def validate_seniority_experience_consistency(seniority: str, min_years: int) ->
     """
     Verifica la coerenza tra seniority e anni di esperienza richiesti.
     
-    Restituisce una tupla (is_consistent, warning_message).
-    Questo serve per segnalare eventuali incongruenze nei dati.
+    Utile per identificare errori nei dati, es:
+    - JD che richiede "senior" ma solo 1 anno di esperienza
+    - JD che richiede "junior" ma 7 anni di esperienza
+    
+    Returns: (is_consistent, warning_message)
     """
     expected_ranges = {
         "junior": (0, 2),
@@ -385,11 +473,40 @@ def validate_seniority_experience_consistency(seniority: str, min_years: int) ->
     return True, ""
 
 
+def normalize_company_name(company_name: str) -> str:
+    """
+    Normalizza il nome dell'azienda.
+    
+    Operazioni:
+    1. Strip whitespace
+    2. Gestisce valori mancanti
+    
+    Il nome azienda non viene modificato sostanzialmente perché
+    è un identificatore che deve rimanere riconoscibile.
+    
+    NUOVO in v3: Funzione aggiunta per gestione esplicita del campo company_name.
+    """
+    if not company_name or pd.isna(company_name):
+        return ""
+    
+    return str(company_name).strip()
+
+
 # ============================================================================
 # NORMALIZZAZIONE DATASET
 # ============================================================================
 
 def normalize_cv_dataset(input_path: Path, output_path: Path, ontology: SkillOntology) -> pd.DataFrame:
+    """
+    Normalizza il dataset CV.
+    
+    Campi normalizzati:
+    - skills → skills_normalized (mappatura ontologia)
+    - languages → languages_normalized (formato CEFR)
+    - experience → inferred_seniority + years_of_experience (calcolato da date)
+    - pref_salary_expectation → pref_salary_normalized (pulizia)
+    - tag_* → booleani True/None
+    """
     print(f"\n{'='*80}")
     print(f"NORMALIZZAZIONE DATASET CV")
     print(f"{'='*80}\n")
@@ -475,6 +592,18 @@ def normalize_cv_dataset(input_path: Path, output_path: Path, ontology: SkillOnt
     return df
 
 def normalize_jd_dataset(input_path: Path, output_path: Path, ontology: SkillOntology) -> pd.DataFrame:
+    """
+    Normalizza il dataset JD.
+    
+    Campi normalizzati:
+    - company_name → company_name_normalized (pulizia) [NUOVO v3]
+    - requirements → requirements_normalized (mappatura ontologia)
+    - nice_to_have → nice_to_have_normalized (mappatura ontologia)
+    - constraints_seniority → constraints_seniority_normalized (standard)
+    - min_experience_years → min_experience_years_normalized (validazione)
+    - constraints_languages → constraints_languages_normalized (formato CEFR)
+    - salary_* → salary_normalized (formato leggibile)
+    """
     print(f"\n{'='*80}")
     print(f"NORMALIZZAZIONE DATASET JD")
     print(f"{'='*80}\n")
@@ -482,6 +611,42 @@ def normalize_jd_dataset(input_path: Path, output_path: Path, ontology: SkillOnt
     print(f"Caricamento: {input_path}")
     df = pd.read_csv(input_path)
     print(f"Righe caricate: {len(df)}\n")
+
+    # =========================================================================
+    # NUOVO v3: Gestione company_name
+    # =========================================================================
+    print("Gestione company_name...")
+    
+    if 'company_name' in df.columns:
+        # Normalizza (principalmente pulizia whitespace)
+        df['company_name_normalized'] = df['company_name'].apply(normalize_company_name)
+        
+        # Statistiche sulle aziende
+        valid_companies = df[df['company_name_normalized'] != '']
+        unique_companies = valid_companies['company_name_normalized'].nunique()
+        
+        print(f"  Colonna trovata: ✓")
+        print(f"  JD con company_name: {len(valid_companies)}/{len(df)}")
+        print(f"  Aziende uniche: {unique_companies}")
+        
+        # Mostra distribuzione se ci sono più aziende
+        if unique_companies > 0:
+            print(f"\n  Distribuzione JD per azienda:")
+            company_counts = df['company_name_normalized'].value_counts()
+            for company, count in company_counts.head(10).items():
+                if company:  # Salta valori vuoti
+                    print(f"    {company:40} {count:3} JD")
+            if len(company_counts) > 10:
+                print(f"    ... e altre {len(company_counts) - 10} aziende")
+    else:
+        # Colonna non presente: crea colonna vuota per retrocompatibilità
+        print(f"  ⚠ Colonna 'company_name' non trovata nel dataset")
+        print(f"    → Creazione colonna vuota per retrocompatibilità...")
+        df['company_name'] = ''
+        df['company_name_normalized'] = ''
+    
+    print()
+    # =========================================================================
 
     print("Normalizzazione requirements...")
     df['requirements_normalized'] = df['requirements'].apply(
@@ -506,11 +671,10 @@ def normalize_jd_dataset(input_path: Path, output_path: Path, ontology: SkillOnt
     print()
 
     # =========================================================================
-    # NUOVO: Normalizzazione min_experience_years
+    # Normalizzazione min_experience_years (v2)
     # =========================================================================
     print("Normalizzazione min_experience_years...")
     
-    # Verifica se la colonna esiste
     if 'min_experience_years' in df.columns:
         # Normalizza usando la seniority per inferire valori mancanti
         df['min_experience_years_normalized'] = df.apply(
@@ -542,7 +706,7 @@ def normalize_jd_dataset(input_path: Path, output_path: Path, ontology: SkillOnt
         
         if warnings:
             print(f"    ⚠ Trovate {len(warnings)} incongruenze:")
-            for title, warning in warnings[:5]:  # Mostra max 5
+            for title, warning in warnings[:5]:
                 print(f"      - {title}: {warning}")
             if len(warnings) > 5:
                 print(f"      ... e altre {len(warnings) - 5}")
@@ -574,6 +738,7 @@ def normalize_jd_dataset(input_path: Path, output_path: Path, ontology: SkillOnt
     print("Normalizzazione salary...")
 
     def rebuild_salary_string(row):
+        """Ricostruisce la stringa salary dai campi separati."""
         sal_min = row.get('salary_min')
         sal_max = row.get('salary_max')
         sal_curr = row.get('salary_currency')
@@ -659,6 +824,11 @@ def main():
         print(f"Skill da mappare: {total_unmapped}")
     else:
         print(f"Tutte le skill sono mappate")
+    
+    # NUOVO v3: Report aziende
+    if 'company_name_normalized' in jd_df.columns:
+        unique_companies = jd_df['company_name_normalized'].replace('', pd.NA).dropna().nunique()
+        print(f"Aziende uniche: {unique_companies}")
 
     print(f"\nOUTPUT:")
     print(f"  {OUTPUT_CV}")
@@ -669,3 +839,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+  
