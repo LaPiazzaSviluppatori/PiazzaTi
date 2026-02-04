@@ -1,0 +1,3 @@
+jd_id,source_file,processed_at,title,department,location_city,location_country,location_remote,description,requirements,nice_to_have,constraints_visa,constraints_relocation,constraints_seniority,constraints_languages,dei_gender_target,dei_underrepresented_target,salary_min,salary_max,salary_currency,contract,requirements_normalized,nice_to_have_normalized,constraints_seniority_normalized,constraints_languages_normalized,salary_normalized
+jd_6b50666d4a184613aaabd1b0803b34f7,jd_6b50666d4a184613aaabd1b0803b34f7.json,2025-11-14 16:59:01,software engineer,,,,,bho,"b, h, o","b, h, o",,,,,,,,,,,"B, H, O","B, H, O",mid,,
+test,test.json,2025-11-14 16:59:01,,,,,,,,,,,,,,,,,,,,,mid,,

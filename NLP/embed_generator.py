@@ -10,6 +10,14 @@ from datetime import datetime
 from typing import Dict, List, Tuple
 import warnings
 
+# Configura PRIMA la cache HuggingFace in una directory sicuramente scrivibile
+# (serve che sia fatto prima di importare sentence_transformers / transformers)
+HF_CACHE_DIR = Path(os.getenv("HF_HOME", "/opt/piazzati/hf-cache"))
+HF_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+os.environ["HF_HOME"] = str(HF_CACHE_DIR)
+os.environ.setdefault("HF_HUB_CACHE", str(HF_CACHE_DIR / "hub"))
+os.environ.setdefault("TRANSFORMERS_CACHE", str(HF_CACHE_DIR / "transformers"))
+
 import pandas as pd
 import numpy as np
 from sentence_transformers import SentenceTransformer
@@ -49,11 +57,6 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
-
-# Configura una cache HuggingFace in una directory sicuramente scrivibile nel container
-HF_CACHE_DIR = Path(os.getenv("HF_HOME", "/opt/piazzati/hf-cache"))
-HF_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-os.environ["HF_HOME"] = str(HF_CACHE_DIR)
 
 
 def setup_directories():

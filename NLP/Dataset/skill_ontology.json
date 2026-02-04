@@ -2,34 +2,26 @@
   "_metadata": {
     "description": "Ontologia delle skill per normalizzazione CV e JD",
     "version": "1.0",
-    "last_updated": "2025-10-31",
-    "total_mappings": 136
+    "last_updated": "2026-02-04 11:47:08",
+    "total_mappings": 139,
+    "unmapped_skills_count": 7
   },
-  
   "skill_mappings": {
     "_comment": "Mapping: sinonimo/variante → nome canonico",
-    
     "python": "Python",
     "py": "Python",
     "python3": "Python",
-    
     "javascript": "JavaScript",
     "js": "JavaScript",
-    
     "typescript": "TypeScript",
     "ts": "TypeScript",
-    
     "java": "Java",
-    
     "c++": "C++",
     "cpp": "C++",
-    
     "c#": "C#",
     "csharp": "C#",
-    
     "go": "Go",
     "golang": "Go",
-    
     "rust": "Rust",
     "ruby": "Ruby",
     "php": "PHP",
@@ -39,192 +31,173 @@
     "r": "R",
     "matlab": "MATLAB",
     "sql": "SQL",
-    
     "react": "React",
     "reactjs": "React",
     "react.js": "React",
-    
     "vue": "Vue.js",
     "vuejs": "Vue.js",
     "vue.js": "Vue.js",
-    
     "angular": "Angular",
     "angularjs": "Angular",
-    
     "django": "Django",
     "flask": "Flask",
-    
     "fastapi": "FastAPI",
     "fast api": "FastAPI",
-    
     "express": "Express.js",
     "expressjs": "Express.js",
     "express.js": "Express.js",
-    
     "node": "Node.js",
     "nodejs": "Node.js",
     "node.js": "Node.js",
-    
     "spring": "Spring",
     "spring boot": "Spring Boot",
     "springboot": "Spring Boot",
-    
     "redux": "Redux",
-    
     "tensorflow": "TensorFlow",
     "pytorch": "PyTorch",
     "keras": "Keras",
-    
     "scikit-learn": "Scikit-learn",
     "sklearn": "Scikit-learn",
     "scikit learn": "Scikit-learn",
-    
     "pandas": "Pandas",
     "numpy": "NumPy",
-    
     "postgres": "PostgreSQL",
     "postgresql": "PostgreSQL",
-    
     "mysql": "MySQL",
-    
     "mongodb": "MongoDB",
     "mongo": "MongoDB",
-    
     "redis": "Redis",
-    
     "elasticsearch": "Elasticsearch",
     "elastic": "Elasticsearch",
-    
     "cassandra": "Cassandra",
     "dynamodb": "DynamoDB",
     "oracle": "Oracle",
-    
     "mssql": "Microsoft SQL Server",
     "sql server": "Microsoft SQL Server",
-    
     "aws": "AWS",
     "amazon web services": "AWS",
-    
     "azure": "Azure",
     "microsoft azure": "Azure",
-    
     "gcp": "Google Cloud Platform",
     "google cloud": "Google Cloud Platform",
-    
     "docker": "Docker",
-    
     "kubernetes": "Kubernetes",
     "k8s": "Kubernetes",
-    
     "terraform": "Terraform",
     "ansible": "Ansible",
     "jenkins": "Jenkins",
-    
     "gitlab": "GitLab",
     "github": "GitHub",
-    
     "ci/cd": "CI/CD",
     "cicd": "CI/CD",
-    
     "nlp": "NLP",
     "natural language processing": "NLP",
-    
     "machine learning": "Machine Learning",
     "ml": "Machine Learning",
-    
     "deep learning": "Deep Learning",
     "dl": "Deep Learning",
-    
     "data science": "Data Science",
-    
     "computer vision": "Computer Vision",
-    
     "llm": "LLMs",
     "llms": "LLMs",
     "large language models": "LLMs",
-    
     "transformers": "Transformers",
     "bert": "BERT",
     "gpt": "GPT",
-    
     "huggingface": "Hugging Face",
     "hugging face": "Hugging Face",
-    
     "langchain": "LangChain",
     "pgvector": "pgvector",
     "faiss": "FAISS",
-    
     "apache spark": "Apache Spark",
     "spark": "Apache Spark",
-    
     "hadoop": "Hadoop",
-    
     "kafka": "Apache Kafka",
     "apache kafka": "Apache Kafka",
-    
     "agile": "Agile",
     "scrum": "Scrum",
     "kanban": "Kanban",
-    
     "jira": "Jira",
     "confluence": "Confluence",
-    
     "figma": "Figma",
     "sketch": "Sketch",
     "adobe xd": "Adobe XD",
-    
     "rest api": "REST API",
     "restful": "REST API",
     "restful api": "REST API",
-    
     "graphql": "GraphQL",
     "grpc": "gRPC",
-    
     "microservices": "Microservices",
     "api": "API",
-    
     "pytest": "Pytest",
     "unittest": "Unittest",
     "jest": "Jest",
     "mocha": "Mocha",
     "selenium": "Selenium",
     "cypress": "Cypress",
-    
     "linux": "Linux",
     "unix": "Unix",
     "bash": "Bash",
     "git": "Git",
     "version control": "Version Control",
-    
     "html": "HTML",
     "css": "CSS",
     "sass": "Sass",
-    
     "tailwind": "Tailwind CSS",
     "tailwindcss": "Tailwind CSS",
     "tailwind css": "Tailwind CSS",
-    
     "bootstrap": "Bootstrap"
   },
-  
   "unmapped_skills": {
-    "_comment": "Skill trovate nei dataset ma non ancora mappate - DA RIVEDERE MANUALMENTE",
-    "_instructions": "Aggiungi queste skill a 'skill_mappings' con il nome canonico appropriato, poi rimuovile da questa sezione",
-    "skills": []
+    "_comment": "Skill trovate nei dataset ma non ancora mappate",
+    "skills": [
+      {
+        "skill": "b",
+        "frequency": 2,
+        "suggested_canonical": "B"
+      },
+      {
+        "skill": "h",
+        "frequency": 2,
+        "suggested_canonical": "H"
+      },
+      {
+        "skill": "o",
+        "frequency": 2,
+        "suggested_canonical": "O"
+      },
+      {
+        "skill": "Upselling",
+        "frequency": 1,
+        "suggested_canonical": "Upselling"
+      },
+      {
+        "skill": "Sales Strategy",
+        "frequency": 1,
+        "suggested_canonical": "Sales strategy"
+      },
+      {
+        "skill": "Sales Forecasting",
+        "frequency": 1,
+        "suggested_canonical": "Sales forecasting"
+      },
+      {
+        "skill": "Sales Planning",
+        "frequency": 1,
+        "suggested_canonical": "Sales planning"
+      }
+    ]
   },
-  
   "seniority_mappings": {
     "junior": "junior",
     "jr": "junior",
     "entry": "junior",
     "entry-level": "junior",
     "entry level": "junior",
-    
     "mid": "mid",
     "mid-level": "mid",
     "mid level": "mid",
     "intermediate": "mid",
-    
     "senior": "senior",
     "sr": "senior",
     "lead": "senior",
@@ -236,26 +209,20 @@
     "vp": "senior",
     "vice president": "senior"
   },
-  
   "cefr_mappings": {
     "a1": "A1",
     "beginner": "A1",
-    
     "a2": "A2",
     "elementary": "A2",
-    
     "b1": "B1",
     "intermediate": "B1",
     "limited working": "B1",
-    
     "b2": "B2",
     "upper intermediate": "B2",
-    
     "c1": "C1",
     "advanced": "C1",
     "professional": "C1",
     "full professional": "C1",
-    
     "c2": "C2",
     "proficient": "C2",
     "native": "C2",
