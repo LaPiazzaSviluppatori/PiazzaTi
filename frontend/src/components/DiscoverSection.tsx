@@ -1,3 +1,4 @@
+import React from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -77,7 +78,7 @@ export const DiscoverSection = ({
   }
 
   const [openDialog, setOpenDialog] = React.useState<string | null>(null);
-  const [xaiData, setXaiData] = React.useState<any>(null);
+  const [xaiData, setXaiData] = React.useState<unknown>(null);
   const [loadingXai, setLoadingXai] = React.useState(false);
 
   const handleDiscoverMore = async (jdId: string) => {
@@ -99,46 +100,17 @@ export const DiscoverSection = ({
       }
       const result = await response.json();
       setXaiData(result);
+      const score = Math.round(result.score ?? result.overall_score ?? 0);
+      toast({
+        title: "Match calcolato",
+        description: `Score da motore NLP: ${score}%`,
+      });
+      onEvaluateMatch(jdId);
     } catch (err) {
       toast({ title: "Errore match", description: String(err), variant: "destructive" });
       setXaiData(null);
     } finally {
       setLoadingXai(false);
-    }
-  };
-    if (!activeCandidate) {
-      toast({ title: "Nessun candidato attivo", description: "Seleziona prima un candidato.", variant: "destructive" });
-      return;
-    }
-
-    try {
-      const response = await fetch("/api/match_cv_jd", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cv_path: activeCandidate.id, jd_path: jdId }),
-      });
-
-      if (!response.ok) {
-        const text = await response.text();
-        throw new Error(text || "Errore dal servizio di matching");
-      }
-
-      const result = await response.json();
-      const score = Math.round(result.score ?? result.overall_score ?? 0);
-
-      toast({
-        title: "Match calcolato",
-        description: `Score da motore NLP: ${score}%`,
-      });
-
-      // Notifica opzionale al chiamante
-      onEvaluateMatch(jdId);
-    } catch (err) {
-      toast({
-        title: "Errore match",
-        description: String(err),
-        variant: "destructive",
-      });
     }
   };
 
@@ -290,33 +262,40 @@ export const DiscoverSection = ({
                       {!loadingXai && xaiData && (
                         <div style={{ maxHeight: 400, overflowY: 'auto', fontSize: 14 }}>
                           {(() => {
-                            const xai = xaiData.xai ?? xaiData;
+                            let xai: Record<string, unknown> = {};
+                            if (typeof xaiData === 'object' && xaiData !== null) {
+                              if ('xai' in xaiData && typeof (xaiData as Record<string, unknown>).xai === 'object') {
+                                xai = (xaiData as Record<string, unknown>).xai as Record<string, unknown>;
+                              } else {
+                                xai = xaiData as Record<string, unknown>;
+                              }
+                            }
                             return (
                               <>
                                 <div className="mb-3">
-                                  <strong>Valutazione complessiva:</strong> {xai.quality_label || '-'}
+                                  <strong>Valutazione complessiva:</strong> {String(xai.quality_label || '-')}
                                 </div>
                                 <div className="mb-2">
                                   <strong>Motivi principali del match:</strong>
                                   <ul className="list-disc ml-5 mt-1">
-                                    {(xai.top_reasons || []).map((r: any, i: number) => (
+                                    {Array.isArray(xai.top_reasons) ? xai.top_reasons.map((r: Record<string, unknown>, i: number) => (
                                       <li key={i} className="mb-1">
-                                        <span className="font-semibold">{r.text}</span>
-                                        {r.evidence && <span className="ml-2 text-muted-foreground">({r.evidence})</span>}
-                                        {typeof r.contribution === 'number' && <span className="ml-2 text-xs text-primary">+{Math.round(r.contribution * 100)}%</span>}
+                                        <span className="font-semibold">{String(r.text ?? '')}</span>
+                                        {r.evidence && <span className="ml-2 text-muted-foreground">({String(r.evidence)})</span>}
+                                        {typeof r.contribution === 'number' && <span className="ml-2 text-xs text-primary">+{Math.round((r.contribution as number) * 100)}%</span>}
                                       </li>
-                                    ))}
+                                    )) : null}
                                   </ul>
                                 </div>
-                                {xai.main_risks && xai.main_risks.length > 0 && (
+                                {Array.isArray(xai.main_risks) && xai.main_risks.length > 0 && (
                                   <div className="mb-2">
                                     <strong>Rischi/GAP principali:</strong>
                                     <ul className="list-disc ml-5 mt-1">
-                                      {xai.main_risks.map((r: any, i: number) => (
+                                      {xai.main_risks.map((r: Record<string, unknown>, i: number) => (
                                         <li key={i} className="mb-1">
-                                          <span className="font-semibold text-red-700">{r.text}</span>
-                                          {r.evidence && <span className="ml-2 text-muted-foreground">({r.evidence})</span>}
-                                          {typeof r.contribution === 'number' && <span className="ml-2 text-xs text-red-700">-{Math.abs(Math.round(r.contribution * 100))}%</span>}
+                                          <span className="font-semibold text-red-700">{String(r.text ?? '')}</span>
+                                          {r.evidence && <span className="ml-2 text-muted-foreground">({String(r.evidence)})</span>}
+                                          {typeof r.contribution === 'number' && <span className="ml-2 text-xs text-red-700">-{Math.abs(Math.round((r.contribution as number) * 100))}%</span>}
                                         </li>
                                       ))}
                                     </ul>
@@ -326,7 +305,7 @@ export const DiscoverSection = ({
                                   <div className="mt-3">
                                     <strong>Riepilogo evidenze:</strong>
                                     <ul className="list-disc ml-5 mt-1">
-                                      {Object.entries(xai.evidence).map(([k, v]: [string, any], i) => (
+                                      {Object.entries(xai.evidence).map(([k, v]: [string, unknown], i) => (
                                         <li key={i}><span className="font-semibold">{k}:</span> {String(v)}</li>
                                       ))}
                                     </ul>
