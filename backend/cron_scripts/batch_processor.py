@@ -208,6 +208,8 @@ class CVBatchProcessor:
             logger.warning("cvs_path non esiste: %s", self.cvs_path)
             return folders
 
+        # Modalità legacy: se esistono sottocartelle con nome data (YYYY-MM-DD),
+        # usale per filtrare il range.
         for child in sorted(self.cvs_path.iterdir()):
             if not child.is_dir():
                 continue
@@ -217,6 +219,20 @@ class CVBatchProcessor:
                 continue
             if start_date <= d <= end_date:
                 folders.append(child)
+
+        # Nuova modalità (flat): se NON abbiamo trovato cartelle data ma ci sono
+        # JSON direttamente sotto cvs_path, tratta l'intera cartella come un
+        # unico "bucket" da processare.
+        if not folders:
+            json_files = list(self.cvs_path.glob("*.json"))
+            if json_files:
+                logger.info(
+                    "Rilevata struttura flat in %s ( %d JSON ). Uso cartella base senza filtro date.",
+                    self.cvs_path,
+                    len(json_files),
+                )
+                folders.append(self.cvs_path)
+
         return folders
 
     def _json_to_csv_pipeline(self, date_folders: List[Path]):
@@ -295,21 +311,10 @@ def main():
     elif args.process_range:
         processor.process_date_range(args.process_range[0], args.process_range[1])
     elif args.process_all:
-        # Trova tutte le date disponibili
-        all_dates = []
-        if processor.cvs_path.exists():
-            for date_folder in processor.cvs_path.iterdir():
-                if date_folder.is_dir():
-                    try:
-                        _ = datetime.fromisoformat(date_folder.name)
-                        all_dates.append(date_folder.name)
-                    except Exception:
-                        continue
-        if all_dates:
-            all_dates.sort()
-            processor.process_date_range(all_dates[0], all_dates[-1])
-        else:
-            logger.warning('Nessun CV trovato da processare')
+        # In presenza di struttura legacy a cartelle data, processa
+        # dall'intervallo minimo-massimo. Con struttura flat, _find_date_folders
+        # restituirà direttamente [cvs_path] ignorando le date.
+        processor.process_date_range()
 
 
 if __name__ == '__main__':
