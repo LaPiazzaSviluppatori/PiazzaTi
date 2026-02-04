@@ -21,8 +21,13 @@ class CVBatchStorage:
     """
     
     def __init__(self):
-        # Path base per i JSON del modulo NLP - tutti i file in /opt/piazzati/backend/NLP/data/cvs
-        self.base_path = Path("/opt/piazzati/backend/NLP/data/cvs")
+        # Path base per i JSON del modulo NLP **dentro il container backend**.
+        # Questa cartella è montata come volume in docker-compose:
+        #   /var/lib/docker/piazzati-data:/app/NLP/data
+        # In questo modo:
+        #   - il backend salva i CV in /app/NLP/data/cvs
+        #   - la pipeline NLP (cv_json_to_dataset_processor.py) legge dalla stessa cartella
+        self.base_path = Path("/app/NLP/data/cvs")
         self.base_path.mkdir(parents=True, exist_ok=True)
         print(f"📁 CVBatchStorage inizializzato: {self.base_path}")
     

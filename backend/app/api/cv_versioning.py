@@ -4,7 +4,10 @@ import os
 import re
 import json
 
-CVS_DIR = "/opt/piazzati/backend/NLP/data/cvs/"
+# Directory condivisa per i JSON dei CV usata dal backend e dalla pipeline NLP
+# Montata in docker-compose come:
+#   /var/lib/docker/piazzati-data:/app/NLP/data
+CVS_DIR = "/app/NLP/data/cvs/"
 
 router = APIRouter(prefix="/cv", tags=["cv_versioning"])
 

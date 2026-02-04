@@ -13,7 +13,12 @@ from datetime import datetime
 import pandas as pd
 
 
-INPUT_FOLDER = "/var/lib/docker/piazzati-data/cvs"
+# Cartella condivisa dei CV JSON DENTRO il container backend.
+# In docker-compose è montata come:
+#   /var/lib/docker/piazzati-data:/app/NLP/data
+# Il backend salva i CV in /app/NLP/data/cvs tramite CVBatchStorage,
+# quindi la pipeline legge dalla stessa posizione.
+INPUT_FOLDER = "/app/NLP/data/cvs"
 OUTPUT_FOLDER = "Dataset"
 OUTPUT_FILENAME = "cv_dataset.csv"
 
