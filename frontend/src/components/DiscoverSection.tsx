@@ -1,6 +1,15 @@
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogTrigger,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogClose,
+} from "@/components/ui/dialog";
 import { Candidate, Opportunity, JobDescription } from "@/types";
 
 type UserRole = "candidate" | "company";
@@ -67,7 +76,36 @@ export const DiscoverSection = ({
       .slice(0, 20);
   }
 
-  const handleApplyNow = async (jdId: string) => {
+  const [openDialog, setOpenDialog] = React.useState<string | null>(null);
+  const [xaiData, setXaiData] = React.useState<any>(null);
+  const [loadingXai, setLoadingXai] = React.useState(false);
+
+  const handleDiscoverMore = async (jdId: string) => {
+    if (!activeCandidate) {
+      toast({ title: "Nessun candidato attivo", description: "Seleziona prima un candidato.", variant: "destructive" });
+      return;
+    }
+    setLoadingXai(true);
+    setOpenDialog(jdId);
+    try {
+      const response = await fetch("/api/match_cv_jd", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cv_path: activeCandidate.id, jd_path: jdId }),
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || "Errore dal servizio di matching");
+      }
+      const result = await response.json();
+      setXaiData(result);
+    } catch (err) {
+      toast({ title: "Errore match", description: String(err), variant: "destructive" });
+      setXaiData(null);
+    } finally {
+      setLoadingXai(false);
+    }
+  };
     if (!activeCandidate) {
       toast({ title: "Nessun candidato attivo", description: "Seleziona prima un candidato.", variant: "destructive" });
       return;
@@ -228,14 +266,83 @@ export const DiscoverSection = ({
                   </ul>
                 </div>
                 <div className="flex gap-2 mt-2">
-                  <Button
-                    size="sm"
-                    className="flex-1"
-                    variant="default"
-                    onClick={() => handleApplyNow(jd.jd_id)}
-                  >
-                    Candidati ora
-                  </Button>
+                  <Dialog open={openDialog === jd.jd_id} onOpenChange={(open) => {
+                    if (!open) {
+                      setOpenDialog(null);
+                      setXaiData(null);
+                    }
+                  }}>
+                    <DialogTrigger asChild>
+                      <Button
+                        size="sm"
+                        className="flex-1"
+                        variant="default"
+                        onClick={() => handleDiscoverMore(jd.jd_id)}
+                      >
+                        Scopri di più
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Spiegazione del Match (XAI)</DialogTitle>
+                      </DialogHeader>
+                      {loadingXai && <div>Caricamento...</div>}
+                      {!loadingXai && xaiData && (
+                        <div style={{ maxHeight: 400, overflowY: 'auto', fontSize: 14 }}>
+                          {(() => {
+                            const xai = xaiData.xai ?? xaiData;
+                            return (
+                              <>
+                                <div className="mb-3">
+                                  <strong>Valutazione complessiva:</strong> {xai.quality_label || '-'}
+                                </div>
+                                <div className="mb-2">
+                                  <strong>Motivi principali del match:</strong>
+                                  <ul className="list-disc ml-5 mt-1">
+                                    {(xai.top_reasons || []).map((r: any, i: number) => (
+                                      <li key={i} className="mb-1">
+                                        <span className="font-semibold">{r.text}</span>
+                                        {r.evidence && <span className="ml-2 text-muted-foreground">({r.evidence})</span>}
+                                        {typeof r.contribution === 'number' && <span className="ml-2 text-xs text-primary">+{Math.round(r.contribution * 100)}%</span>}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                                {xai.main_risks && xai.main_risks.length > 0 && (
+                                  <div className="mb-2">
+                                    <strong>Rischi/GAP principali:</strong>
+                                    <ul className="list-disc ml-5 mt-1">
+                                      {xai.main_risks.map((r: any, i: number) => (
+                                        <li key={i} className="mb-1">
+                                          <span className="font-semibold text-red-700">{r.text}</span>
+                                          {r.evidence && <span className="ml-2 text-muted-foreground">({r.evidence})</span>}
+                                          {typeof r.contribution === 'number' && <span className="ml-2 text-xs text-red-700">-{Math.abs(Math.round(r.contribution * 100))}%</span>}
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+                                {xai.evidence && (
+                                  <div className="mt-3">
+                                    <strong>Riepilogo evidenze:</strong>
+                                    <ul className="list-disc ml-5 mt-1">
+                                      {Object.entries(xai.evidence).map(([k, v]: [string, any], i) => (
+                                        <li key={i}><span className="font-semibold">{k}:</span> {String(v)}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+                              </>
+                            );
+                          })()}
+                        </div>
+                      )}
+                      {!loadingXai && !xaiData && <div>Nessun dato XAI disponibile.</div>}
+                      <DialogClose asChild>
+                        <Button variant="outline">Chiudi</Button>
+                      </DialogClose>
+                    </DialogContent>
+                  </Dialog>
                   <Button size="sm" className="flex-1" variant="outline">Aggiungi ai preferiti</Button>
                 </div>
               </Card>

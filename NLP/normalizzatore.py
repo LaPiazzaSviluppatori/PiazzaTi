@@ -321,6 +321,17 @@ def normalize_cv_dataset(input_path: Path, output_path: Path, ontology: SkillOnt
     df = pd.read_csv(input_path)
     print(f"Righe caricate: {len(df)}\n")
 
+    # Sanitizza le colonne testuali per evitare errori di tipo (es. float/NaN)
+    # che causano TypeError quando si applicano slice tipo [:80].
+    for col in [
+        'requirements',
+        'nice_to_have',
+        'constraints_languages',
+        'constraints_seniority',
+    ]:
+        if col in df.columns:
+            df[col] = df[col].fillna("").astype(str)
+
     if len(df) == 0:
         print("CV dataset vuoto: nessuna normalizzazione necessaria.")
         print(f"Salvataggio: {output_path}")
@@ -424,15 +435,21 @@ def normalize_jd_dataset(input_path: Path, output_path: Path, ontology: SkillOnt
     df['requirements_normalized'] = df['requirements'].apply(
         lambda x: normalize_skills_string(x, ontology)
     )
-    print(f"  Prima: {df['requirements'].iloc[0][:80]}...")
-    print(f"  Dopo:  {df['requirements_normalized'].iloc[0][:80]}...\n")
+    if len(df) > 0:
+        req_before = str(df['requirements'].iloc[0])
+        req_after = str(df['requirements_normalized'].iloc[0])
+        print(f"  Prima: {req_before[:80]}...")
+        print(f"  Dopo:  {req_after[:80]}...\n")
 
     print("Normalizzazione nice_to_have...")
     df['nice_to_have_normalized'] = df['nice_to_have'].apply(
         lambda x: normalize_skills_string(x, ontology)
     )
-    print(f"  Prima: {df['nice_to_have'].iloc[0][:80]}...")
-    print(f"  Dopo:  {df['nice_to_have_normalized'].iloc[0][:80]}...\n")
+    if len(df) > 0:
+        nth_before = str(df['nice_to_have'].iloc[0])
+        nth_after = str(df['nice_to_have_normalized'].iloc[0])
+        print(f"  Prima: {nth_before[:80]}...")
+        print(f"  Dopo:  {nth_after[:80]}...\n")
 
     print("Normalizzazione seniority...")
     df['constraints_seniority_normalized'] = df['constraints_seniority'].apply(

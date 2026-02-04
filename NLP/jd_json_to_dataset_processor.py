@@ -350,7 +350,11 @@ def process_files(input_dir: str, output_dir: str, output_file: str):
     output_path.mkdir(parents=True, exist_ok=True)
 
     if full_output_path.exists():
-        existing_df = pd.read_csv(full_output_path, encoding='utf-8')
+        # Carichiamo sempre il dataset esistente trattando tutte le colonne come stringhe.
+        # In questo modo possiamo aggiornare i valori (incluso "") senza errori di cast
+        # come "LossySetitemError" quando pandas tenta di forzare stringhe dentro colonne
+        # con dtype float64.
+        existing_df = pd.read_csv(full_output_path, encoding='utf-8', dtype=str)
 
         for row_index, row_data in rows_to_update:
             for col, value in row_data.items():
