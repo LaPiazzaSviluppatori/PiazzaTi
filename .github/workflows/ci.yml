@@ -161,9 +161,16 @@ jobs:
     if: github.ref == 'refs/heads/main'
     env:
       IMAGE_FULL: ${{ github.event.inputs.image_override != '' && github.event.inputs.image_override || needs.build.outputs.image_full }}
+
     steps:
       - name: Checkout (for helper scripts)
         uses: actions/checkout@v4
+
+      - name: Free up space on runner
+        run: |
+          sudo rm -rf /opt/hostedtoolcache || true
+          sudo apt-get clean
+          docker system prune -af || true
 
       # Frontend will be built using Docker on the server instead of uploading separately
 
