@@ -663,6 +663,15 @@ def build_candidate_entry(row: pd.Series, config: LinearConfig) -> dict:
         'dei_tags': {
             'women': bool(row.get('tag_women', 0)),
             'protected_category': bool(row.get('tag_protected_category', 0))
+        },
+        'parsing_quality': {
+            'cv_has_summary': bool(row.get('cv_has_summary', 0)),
+            'cv_has_experience': bool(row.get('cv_has_experience', 0)),
+            'cv_has_education': bool(row.get('cv_has_education', 0)),
+            'cv_has_skills': bool(row.get('cv_has_skills', 0)),
+            'cv_has_languages': bool(row.get('cv_has_languages', 0)),
+            'cv_completeness_score': round(float(row.get('cv_completeness_score', 0)), 4),
+            'cv_skills_count': int(row.get('cv_skills_count', 0))
         }
     }
 
