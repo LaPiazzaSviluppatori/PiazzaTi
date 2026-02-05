@@ -30,7 +30,7 @@ class Document(Base):
         PrimaryKeyConstraint("id", name="documents_pkey"),
         # RIMOSSO: Index("gin_parsed_json_idx", "parsed_json"),
         Index("idx_jd_open_lang", "language", "created_at"),
-        Index("unique_latest_cv_per_user", "user_id", "is_latest", unique=True),
+        # L'indice unique parziale su user_id dove is_latest=true viene gestito solo via migration
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)

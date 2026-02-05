@@ -14,12 +14,15 @@ depends_on = None
 
 def upgrade():
     # Drop old index
-    op.drop_index('unique_latest_cv_per_user', table_name='documents')
-    # Create new unique index on (user_id, is_latest)
-    op.create_index('unique_latest_cv_per_user', 'documents', ['user_id', 'is_latest'], unique=True)
+        op.drop_index('unique_latest_cv_per_user', table_name='documents')
+        # Create new unique partial index on user_id where is_latest=true
+        op.execute("""
+        CREATE UNIQUE INDEX unique_latest_cv_per_user ON documents(user_id)
+        WHERE is_latest = true;
+        """)
 
 def downgrade():
     # Drop new index
-    op.drop_index('unique_latest_cv_per_user', table_name='documents')
-    # Recreate old unique index on user_id only
-    op.create_index('unique_latest_cv_per_user', 'documents', ['user_id'], unique=True)
+        op.drop_index('unique_latest_cv_per_user', table_name='documents')
+        # Recreate old unique index su (user_id, is_latest)
+        op.create_index('unique_latest_cv_per_user', 'documents', ['user_id', 'is_latest'], unique=True)
