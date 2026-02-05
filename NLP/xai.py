@@ -486,6 +486,13 @@ def build_xai_company(
     if details is None:
         details = candidate_data.get('details', {})
 
+    # Recupera cv_completeness_score da parsing_quality se non presente in details
+    # (nel flusso batch il reranker lo mette in parsing_quality, nel flusso singolo è già in details)
+    if 'cv_completeness_score' not in details:
+        parsing_quality = candidate_data.get('parsing_quality', {})
+        if 'cv_completeness_score' in parsing_quality:
+            details['cv_completeness_score'] = parsing_quality['cv_completeness_score']
+
     top_reasons = build_top_reasons(
         feature_values, feature_contributions, details,
         experience_details, seniority_details, skills_details, thresholds
