@@ -207,14 +207,27 @@ export const DiscoverSection = ({
             <Badge variant="outline">{matchedJd.length} lavori</Badge>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-            {matchedJd.map(({ jd, score, mustRequirements, niceRequirements }) => (
-              <Card key={jd.jd_id} className="p-4 border-2 border-muted shadow-sm">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="inline-flex items-center px-2 py-0.5 rounded bg-muted text-xs font-medium text-muted-foreground mr-2">
-                    <Briefcase className="h-4 w-4 mr-1 inline" /> job
-                  </span>
-                  <span className="ml-auto text-xs font-semibold text-primary">Score match: {score}%</span>
-                </div>
+            {matchedJd.map(({ jd, score, mustRequirements, niceRequirements }) => {
+              // Recupera lo score NLP dal backend se disponibile (dopo il match XAI)
+              let nlpScore: number | null = null;
+              if (openDialog === jd.jd_id && xaiData && typeof xaiData === 'object' && xaiData !== null) {
+                const xaiObj = 'score' in xaiData ? (xaiData as Record<string, unknown>) : null;
+                if (xaiObj && typeof xaiObj.score === 'number') {
+                  nlpScore = Math.round((xaiObj.score as number));
+                } else if (xaiObj && typeof xaiObj.final_score === 'number') {
+                  nlpScore = Math.round((xaiObj.final_score as number) * 100);
+                }
+              }
+              return (
+                <Card key={jd.jd_id} className="p-4 border-2 border-muted shadow-sm">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded bg-muted text-xs font-medium text-muted-foreground mr-2">
+                      <Briefcase className="h-4 w-4 mr-1 inline" /> job
+                    </span>
+                    <span className="ml-auto text-xs font-semibold text-primary">
+                      Score match: {nlpScore !== null ? nlpScore : score}%
+                    </span>
+                  </div>
                 <div className="flex items-center gap-2 mb-1">
                   <span className="font-semibold text-base">{jd.title}</span>
                   {score >= 80 && <span className="ml-2 text-yellow-500 font-bold">★</span>}
@@ -324,8 +337,9 @@ export const DiscoverSection = ({
                   </Dialog>
                   <Button size="sm" className="flex-1" variant="outline">Aggiungi ai preferiti</Button>
                 </div>
-              </Card>
-            ))}
+                </Card>
+              );
+            })}
           </div>
         </Card>
       )}

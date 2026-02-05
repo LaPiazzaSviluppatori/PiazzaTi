@@ -28,7 +28,7 @@ class Document(Base):
             ["user_id"], ["users.id"], ondelete="CASCADE", name="documents_user_id_fkey"
         ),
         PrimaryKeyConstraint("id", name="documents_pkey"),
-        Index("gin_parsed_json_idx", "parsed_json"),
+        # RIMOSSO: Index("gin_parsed_json_idx", "parsed_json"),
         Index("idx_jd_open_lang", "language", "created_at"),
         Index("unique_latest_cv_per_user", "user_id", unique=True),
     )

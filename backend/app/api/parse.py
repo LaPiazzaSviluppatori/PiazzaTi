@@ -43,32 +43,34 @@ def _save_parsed_cv_to_db(db: Session, user_id: str, doc_parsed) -> Document:
     # Assicura che parsed_json contenga solo tipi JSON-serializzabili
     parsed_json = jsonable_encoder(parsed_json)
 
-    # Sostituisci il vecchio CV (is_latest)
-    old_cv = (
-        db.query(Document)
-        .filter(and_(Document.user_id == user_id, Document.type == "cv", Document.is_latest == True))
-        .first()
-    )
-    if old_cv:
-        old_cv.is_latest = False
-        db.add(old_cv)
-        db.commit()
-
-    # Crea nuovo documento
-    new_doc = Document(
-        id=uuid.uuid4(),
-        user_id=user_id,
-        type="cv",
-        is_latest=True,
-        parsed_json=parsed_json,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
-        status="parsed",
-    )
-    db.add(new_doc)
-    db.commit()
-    db.refresh(new_doc)
-    return new_doc
+    # Transazione atomica con lock sulla riga
+    from sqlalchemy import select
+    with db.begin():
+        # Lock sulla riga del vecchio CV
+        old_cv = (
+            db.execute(
+                select(Document).with_for_update()
+                .where(Document.user_id == user_id, Document.type == "cv", Document.is_latest == True)
+            ).scalars().first()
+        )
+        if old_cv:
+            old_cv.is_latest = False
+            db.add(old_cv)
+        # Crea nuovo documento
+        new_doc = Document(
+            id=uuid.uuid4(),
+            user_id=user_id,
+            type="cv",
+            is_latest=True,
+            parsed_json=parsed_json,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+            status="parsed",
+        )
+        db.add(new_doc)
+        db.flush()
+        db.refresh(new_doc)
+        return new_doc
 
 
 @router.post("/upload_db")
