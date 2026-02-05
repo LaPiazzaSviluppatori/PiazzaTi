@@ -2,9 +2,12 @@
 RERANKER - FEATURE ENGINEERING MODULE
 Calcola feature esplicite e interpretabili per il reranking delle coppie CV-JD.
 
-AGGIORNAMENTO v1.2:
-- Pesi aumentati per migliore differenziazione score
-- usa min_experience_years_normalized invece di estrarre anni da requirements
+AGGIORNAMENTO v1.4:
+- must_have_missing peso aggiornato da -0.075 a -0.10
+  (5 skill mancanti producono -0.50 invece di -0.375)
+- Rimossa normalizzazione min-max per gruppo (linear_score_normalized)
+- final_score = clip(linear_score_raw + dei_boost, 0, 1)
+- Score ora riflette il valore assoluto del match, non la posizione relativa nel gruppo
 """
 
 import pandas as pd
@@ -97,12 +100,6 @@ def get_seniority_string(seniority: str) -> str:
     return str(seniority).lower().strip()
 
 
-def get_language_level_numeric(level: str, config: Config) -> int:
-    if pd.isna(level):
-        return 0
-    return config.LANGUAGE_LEVELS.get(str(level).lower(), 0)
-
-
 def extract_current_role_from_experience(experience_str: str) -> str:
     """Estrae il titolo del ruolo attuale (primo nella lista) dal campo experience."""
     if pd.isna(experience_str) or experience_str == '':
@@ -149,6 +146,9 @@ def compute_semantic_features(reranker_input: pd.DataFrame) -> pd.DataFrame:
     features['user_id'] = reranker_input['user_id']
     features['cosine_similarity_raw'] = reranker_input['cosine_similarity']
 
+    # La cosine_similarity_normalized per-gruppo resta perché è una FEATURE di input
+    # al modello (serve per rendere la cosine comparabile tra JD diverse).
+    # Quello che è stato rimosso è la normalizzazione dello SCORE FINALE.
     def normalize_within_group(group):
         min_val, max_val = group.min(), group.max()
         if max_val == min_val:
@@ -481,6 +481,10 @@ def compute_dei_score(features: pd.DataFrame, config: DEIConfig) -> pd.DataFrame
     result = features.copy()
 
     result['dei_boost'] = result['dei_tag_count'] * config.TAG_BOOST
+
+    # v1.3: final_score basato su raw, non su normalizzato
+    # score_with_dei usa cosine_similarity_normalized come proxy temporaneo
+    # (verrà sovrascritto dal linear model nella fase 3)
     result['score_with_dei'] = result['cosine_similarity_normalized'] + result['dei_boost']
     result['score_with_dei'] = result['score_with_dei'].clip(0, 1)
 
@@ -534,31 +538,31 @@ class LinearConfig:
     WEIGHTS: dict = None
 
     def __post_init__(self):
-        # PESI AGGIORNATI v1.2 (×1.5 per migliore differenziazione)
+        # PESI v1.4 - must_have_missing aggiornato da -0.075 a -0.10
         self.WEIGHTS = {
             # Similarità semantica
-            'cosine_similarity_normalized': 0.45,    # era 0.30
+            'cosine_similarity_normalized': 0.45,
 
             # Competenze
-            'skill_overlap_core_norm': 0.30,         # era 0.20 (già modificato da 0.15)
-            'skill_coverage_total': 0.15,            # era 0.10 (già modificato da 0.05)
-            'skill_overlap_nice_norm': 0.075,        # era 0.05
+            'skill_overlap_core_norm': 0.30,
+            'skill_coverage_total': 0.15,
+            'skill_overlap_nice_norm': 0.075,
 
             # Esperienza
-            'experience_meets_requirement': 0.30,    # era 0.20
+            'experience_meets_requirement': 0.30,
 
             # Seniority
-            'seniority_match': 0.075,                # era 0.05 (già modificato da 0.15)
+            'seniority_match': 0.075,
 
             # Ruolo
-            'role_similarity_jaccard': 0.10,         # era 0.075
-            'role_coherent': 0.10,                   # era 0.075
+            'role_similarity_jaccard': 0.10,
+            'role_coherent': 0.10,
 
             # Penalità
-            'must_have_missing': -0.075,             # era -0.05
-            'experience_penalty_soft': -0.15,        # era -0.10
-            'seniority_mismatch_strong': -0.225,     # era -0.15
-            'seniority_underskilled': -0.075,        # era -0.05
+            'must_have_missing': -0.10,              # era -0.075 in v1.2
+            'experience_penalty_soft': -0.15,
+            'seniority_mismatch_strong': -0.225,
+            'seniority_underskilled': -0.075,
         }
 
 
@@ -572,7 +576,12 @@ def load_features(config: LinearConfig) -> pd.DataFrame:
 
 
 def compute_linear_score(df: pd.DataFrame, config: LinearConfig) -> pd.DataFrame:
-    """Calcola lo score con modello lineare a pesi predefiniti."""
+    """
+    Calcola lo score con modello lineare a pesi predefiniti.
+    
+    v1.4: must_have_missing peso aggiornato a -0.10.
+    Il final_score è linear_score_raw + dei_boost, clippato a [0, 1].
+    """
     result = df.copy()
 
     score = pd.Series(0.0, index=df.index)
@@ -586,16 +595,10 @@ def compute_linear_score(df: pd.DataFrame, config: LinearConfig) -> pd.DataFrame
 
     result['linear_score_raw'] = score
 
-    def normalize_group(group):
-        min_val, max_val = group.min(), group.max()
-        if max_val == min_val:
-            return pd.Series(0.5, index=group.index)
-        return (group - min_val) / (max_val - min_val)
-
-    result['linear_score'] = result.groupby('jd_id')['linear_score_raw'].transform(normalize_group)
-
+    # v1.3: niente più normalizzazione per gruppo.
+    # final_score = raw + dei_boost, clippato a [0, 1]
     dei_boost = df['dei_boost'].fillna(0) if 'dei_boost' in df.columns else 0
-    result['final_score'] = (result['linear_score'] + dei_boost).clip(0, 1)
+    result['final_score'] = (result['linear_score_raw'] + dei_boost).clip(0, 1)
 
     result['final_rank'] = result.groupby('jd_id')['final_score'].rank(
         method='first', ascending=False
@@ -624,7 +627,6 @@ def build_candidate_entry(row: pd.Series, config: LinearConfig) -> dict:
         'score': round(float(row['final_score']), 4),
         'score_breakdown': {
             'linear_score_raw': round(float(row.get('linear_score_raw', 0)), 4),
-            'linear_score_normalized': round(float(row.get('linear_score', 0)), 4),
             'dei_boost': round(float(row.get('dei_boost', 0)), 4),
             'final_score': round(float(row['final_score']), 4)
         },
@@ -687,9 +689,9 @@ def build_output_json(df: pd.DataFrame, config: LinearConfig) -> dict:
             'total_jds': df['jd_id'].nunique(),
             'total_candidates': len(df),
             'scoring_method': 'linear_weighted_model',
-            'version': '1.2',
+            'version': '1.4',
             'weights': config.WEIGHTS,
-            'notes': 'v1.2: Weights increased x1.5 for better score differentiation'
+            'notes': 'v1.4: must_have_missing peso aggiornato a -0.10. Raw score as final score, no group normalization. Quality labels: EXCELLENT>=0.45, GOOD>=0.20, WEAK<0.20.'
         },
         'results': []
     }
@@ -725,7 +727,7 @@ def run_reranker(config: LinearConfig) -> dict:
 def run_full_pipeline():
     """Esegue l'intera pipeline di reranking."""
     print("="*60)
-    print("RERANKER PIPELINE v1.2")
+    print("RERANKER PIPELINE v1.4")
     print("="*60)
     
     print("\n[1/3] Feature Engineering")
