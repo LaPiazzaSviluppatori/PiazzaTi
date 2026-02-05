@@ -2,10 +2,12 @@
 User CV Matcher - Confronto singolo CV con JD
 Usa la stessa pipeline del reranker aziendale.
 
-AGGIORNAMENTO v1.3.0:
+AGGIORNAMENTO v1.4.1:
+- must_have_missing peso aggiornato da -0.075 a -0.10 (allineato a reranker v1.4)
+- Rimossa normalizzazione (linear_score_normalized)
+- final_score = clip(linear_score_raw + dei_boost, 0, 1)
 - Integrazione XAI inline (spiegazioni automatiche)
 - Aggiunto campo 'xai' nell'output con top_reasons, main_risks, evidence
-- Aggiunto seniority_details, skills_details, experience_details
 """
 
 import json
@@ -36,7 +38,7 @@ class Config:
     JD_DATASET_PATH: Path = Path("Dataset/normalized/jd_dataset_normalized.csv")
 
     QUALITY_THRESHOLDS: Dict[str, float] = field(default_factory=lambda: {
-        'excellent': 0.5, 'good': 0.3, 'weak': 0.0
+        'excellent': 0.45, 'good': 0.20, 'weak': 0.0
     })
     
     SENIORITY_LEVELS: Dict[str, int] = field(default_factory=lambda: {
@@ -44,7 +46,7 @@ class Config:
     })
     
     WEIGHTS: Dict[str, float] = field(default_factory=lambda: {
-        # Pesi v1.2 (×1.5 per migliore differenziazione)
+        # Pesi v1.4 - must_have_missing aggiornato da -0.075 a -0.10
         'cosine_similarity_normalized': 0.45,
         'skill_overlap_core_norm': 0.30,
         'skill_coverage_total': 0.15,
@@ -53,7 +55,7 @@ class Config:
         'seniority_match': 0.075,
         'role_similarity_jaccard': 0.10,
         'role_coherent': 0.10,
-        'must_have_missing': -0.075,
+        'must_have_missing': -0.10,              # era -0.075 in v1.2
         'experience_penalty_soft': -0.15,
         'seniority_mismatch_strong': -0.225,
         'seniority_underskilled': -0.075,
@@ -356,7 +358,12 @@ def compute_features(user_id: str, jd_id: str, cosine_sim: float,
 # ============================================================================
 
 def compute_score(features: Dict, config: Config) -> Dict:
-    """Calcola score finale usando weighted linear combination."""
+    """
+    Calcola score finale usando weighted linear combination.
+    
+    v1.4.1: must_have_missing peso aggiornato a -0.10.
+    final_score = clip(linear_score_raw + dei_boost, 0, 1)
+    """
     score = 0.0
     contributions = {}
 
@@ -372,7 +379,6 @@ def compute_score(features: Dict, config: Config) -> Dict:
 
     return {
         'linear_score_raw': round(score, 4),
-        'linear_score_normalized': round(score, 4),
         'dei_boost': round(dei_boost, 4),
         'final_score': round(final, 4),
         'contributions': contributions
@@ -519,7 +525,6 @@ def build_top_reasons(
             "evidence": f"Ruolo attuale: {cv_role}"
         })
     
-    # Ordina per contributo e ritorna top 5
     reasons.sort(key=lambda x: x['contribution'], reverse=True)
     return reasons[:5]
 
@@ -611,7 +616,6 @@ def build_main_risks(
             "evidence": f"Candidato: {years_cv_int} anni, richiesti: {years_jd_int} anni"
         })
     
-    # Ordina per severità e impatto
     severity_order = {"high": 0, "medium": 1, "low": 2}
     risks.sort(key=lambda x: (severity_order.get(x['severity'], 2), x['contribution']))
     return risks[:3]
@@ -656,15 +660,13 @@ def build_xai(
 ) -> Dict[str, Any]:
     """Costruisce l'output XAI completo per il candidato."""
     
-    # Quality label
-    if final_score >= 0.5:
+    if final_score >= 0.45:
         quality_label = "EXCELLENT"
-    elif final_score >= 0.3:
+    elif final_score >= 0.20:
         quality_label = "GOOD"
     else:
         quality_label = "WEAK"
     
-    # Build components
     top_reasons = build_top_reasons(
         feature_values, feature_contributions,
         experience_details, seniority_details, skills_details, details
@@ -691,7 +693,12 @@ def build_xai(
 
 def build_json(user_id: str, jd_id: str, features: Dict, score: Dict,
                jd_data: pd.DataFrame, config: Config) -> Dict:
-    """Costruisce JSON output strutturato per il match con XAI."""
+    """
+    Costruisce JSON output strutturato per il match con XAI.
+    
+    v1.4.1: score_breakdown non contiene più linear_score_normalized.
+    must_have_missing peso = -0.10.
+    """
     jd_row = jd_data[jd_data['jd_id'] == jd_id].iloc[0]
     jd_title = jd_row.get('title', '')
 
@@ -749,7 +756,6 @@ def build_json(user_id: str, jd_id: str, features: Dict, score: Dict,
         'score': score['final_score'],
         'score_breakdown': {
             'linear_score_raw': score['linear_score_raw'],
-            'linear_score_normalized': score['linear_score_normalized'],
             'dei_boost': score['dei_boost'],
             'final_score': score['final_score']
         },
@@ -769,7 +775,7 @@ def build_json(user_id: str, jd_id: str, features: Dict, score: Dict,
             'protected_category': bool(features.get('tag_protected_category', 0))
         },
         'details': details,
-        'xai': xai  # <-- XAI INTEGRATO
+        'xai': xai
     }
 
     return {
@@ -777,9 +783,9 @@ def build_json(user_id: str, jd_id: str, features: Dict, score: Dict,
             'generated_at': datetime.now().isoformat(),
             'comparison_type': 'user_single_jd',
             'scoring_method': 'linear_weighted_model',
-            'version': '1.3.0',
+            'version': '1.4.1',
             'weights': config.WEIGHTS,
-            'notes': 'v1.3.0: Integrated XAI explanations'
+            'notes': 'v1.4.1: must_have_missing=-0.10. Raw score as final, no normalization. Quality labels: EXCELLENT>=0.45, GOOD>=0.20, WEAK<0.20. Integrated XAI.'
         },
         'job_description': {'jd_id': jd_id, 'title': jd_title},
         'candidate': candidate,
