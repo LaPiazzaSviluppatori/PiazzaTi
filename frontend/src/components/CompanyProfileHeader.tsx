@@ -5,7 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Users } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
-export const CompanyProfileHeader: React.FC = () => {
+interface CompanyProfileHeaderProps {
+  isCompany?: boolean;
+}
+
+export const CompanyProfileHeader: React.FC<CompanyProfileHeaderProps> = ({ isCompany = false }) => {
   const [companyName, setCompanyName] = useState<string>("");
   const [legalName, setLegalName] = useState<string>("");
   const [profileImagePreview, setProfileImagePreview] = useState<string | null>(null);
@@ -26,11 +30,11 @@ export const CompanyProfileHeader: React.FC = () => {
   return (
     <Card className="p-4">
       <div className="flex items-center gap-6">
-        <div className="w-28 h-28 rounded-full overflow-hidden border bg-muted/20 flex items-center justify-center">
+        <div className={`w-28 h-28 rounded-full overflow-hidden border flex items-center justify-center ${isCompany ? 'bg-blue-100 border-blue-200' : 'bg-muted/20'}`}>
           {profileImagePreview ? (
             <img src={profileImagePreview} alt="company" className="w-full h-full object-cover" />
           ) : (
-            <Users className="h-8 w-8 text-muted-foreground" />
+            <Users className={`h-8 w-8 ${isCompany ? 'text-blue-600' : 'text-muted-foreground'}`} />
           )}
         </div>
 

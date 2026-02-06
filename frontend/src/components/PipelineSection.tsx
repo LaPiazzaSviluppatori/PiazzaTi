@@ -1,5 +1,6 @@
 import { Card } from "@/components/ui/card";
 import { AuditLogEntry, Candidate, JobDescription } from "@/types";
+import GestisciCandidature from "./GestisciCandidature";
 import { ArrowRight, Database, FileText, Filter, MessageSquare, Shield } from "lucide-react";
 
 type PipelineMode = "candidate" | "company";
@@ -10,9 +11,10 @@ interface PipelineSectionProps {
   deiMode: boolean;
   isParsing?: boolean;
   mode?: PipelineMode;
+  onCreateJd?: (jd: Omit<JobDescription, "id" | "createdAt">) => void;
 }
 
-export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode, isParsing, mode = "candidate" }: PipelineSectionProps) => {
+export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode, isParsing, mode = "candidate", onCreateJd }: PipelineSectionProps) => {
   const pipelineStagesCandidate = [
     { name: "CV Ingest", icon: FileText, input: "CV, Portfolio", output: "Profilo Strutturato" },
     { name: "Screening", icon: Filter, input: "Profili + JD", output: "Punteggi Match" },
@@ -30,7 +32,7 @@ export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode
   return (
     <div className="space-y-6">
       <Card className="p-6">
-        <h3 className="text-lg font-semibold mb-6">Pipeline del Processo</h3>
+        <h3 className="text-lg font-semibold mb-6">{mode === 'company' ? 'Gestisci candidature' : 'Pipeline del Processo'}</h3>
         <div className="flex flex-col md:flex-row items-center justify-between gap-4">
           {pipelineStages.map((stage, index) => {
             const isGlow = (mode === "candidate" && stage.name === "CV Ingest" && isParsing) ||
@@ -74,6 +76,11 @@ export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode
           }
         `}</style>
       </Card>
+      {mode === "company" && (
+        <div>
+          <GestisciCandidature onCreateJd={onCreateJd} />
+        </div>
+      )}
     </div>
   );
 };
