@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { JobDescription, ShortlistCandidate, AuditLogEntry, InclusivityIssue } from "@/types";
 import { AlertTriangle, CheckCircle, Users, FileText, ShieldAlert, Plus, X } from "lucide-react";
+import CompanyProfileHeader from "./CompanyProfileHeader";
 import { toast } from "@/hooks/use-toast";
 
 interface CompanySectionProps {
@@ -28,6 +29,37 @@ export const CompanySection = ({
   auditLog,
   onCloseShortlist,
 }: CompanySectionProps) => {
+  // Posts state (local only)
+  const [posts, setPosts] = useState<Array<{ id: string; text: string; image?: string; createdAt: string }>>([]);
+  const [postText, setPostText] = useState("");
+  const [postImageFile, setPostImageFile] = useState<File | null>(null);
+  const [postImagePreview, setPostImagePreview] = useState<string | null>(null);
+
+  const handlePostImageChange = (f?: File | null) => {
+    if (!f) {
+      setPostImageFile(null);
+      setPostImagePreview(null);
+      return;
+    }
+    setPostImageFile(f);
+    try {
+      setPostImagePreview(URL.createObjectURL(f));
+    } catch {
+      setPostImagePreview(null);
+    }
+  };
+
+  const handleCreatePost = () => {
+    if (!postText.trim() && !postImageFile) {
+      toast({ title: "Contenuto richiesto", description: "Inserisci testo o carica un'immagine.", variant: "destructive" });
+      return;
+    }
+    const newPost = { id: String(Date.now()), text: postText.trim(), image: postImagePreview || undefined, createdAt: new Date().toISOString() };
+    setPosts(prev => [newPost, ...prev]);
+    setPostText("");
+    handlePostImageChange(null);
+    toast({ title: "Post pubblicato", description: "Il tuo post è visibile nella timeline aziendale." });
+  };
   const [jdForm, setJdForm] = useState({
     title: "",
     company: "",
@@ -224,6 +256,38 @@ export const CompanySection = ({
 
   return (
     <div className="space-y-6">
+      {/* Company header */}
+      <CompanyProfileHeader />
+
+      {/* Posts */}
+      <Card className="p-6">
+        <h3 className="text-lg font-semibold mb-3">Post Aziendali</h3>
+        <Textarea value={postText} onChange={e => setPostText(e.target.value)} placeholder="Condividi aggiornamenti o opportunità..." rows={2} />
+        <div className="flex items-center gap-3 mt-3">
+          <label className="inline-flex items-center gap-2 cursor-pointer">
+            <input type="file" accept="image/*" className="hidden" onChange={e => handlePostImageChange(e.target.files?.[0] || null)} />
+            <Button variant="outline" size="sm">Carica immagine</Button>
+          </label>
+          {postImagePreview && <div className="w-20 h-20 overflow-hidden rounded"><img src={postImagePreview} alt="preview" className="w-full h-full object-cover" /></div>}
+          <div className="ml-auto">
+            <Button onClick={handleCreatePost}>Pubblica</Button>
+          </div>
+        </div>
+
+        <div className="mt-6 space-y-4">
+          {posts.length === 0 ? (
+            <div className="text-sm text-muted-foreground">Nessun post al momento.</div>
+          ) : (
+            posts.map(p => (
+              <div key={p.id} className="p-3 border rounded-lg">
+                <div className="text-sm text-muted-foreground mb-1">{new Date(p.createdAt).toLocaleString()}</div>
+                <div className="mb-2">{p.text}</div>
+                {p.image && <img src={p.image} alt="post" className="max-h-48 w-full object-cover rounded" />}
+              </div>
+            ))
+          )}
+        </div>
+      </Card>
       {/* JD Creator */}
       <Card className="p-6">
         <h3 className="text-lg font-semibold flex items-center gap-2 mb-4">

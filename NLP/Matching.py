@@ -19,8 +19,9 @@ warnings.filterwarnings('ignore')
 
 # Config paths
 BASE_DIR = Path.cwd()
-EMBEDDINGS_DIR = BASE_DIR / "NLP"/ "embeddings"
-OUTPUT_DIR = BASE_DIR / "NLP" / "match_results"
+# Use directories relative to the current working NLP folder (no duplicated "NLP" segment)
+EMBEDDINGS_DIR = BASE_DIR / "embeddings"
+OUTPUT_DIR = BASE_DIR / "match_results"
 
 # Config params
 TOP_K = 20

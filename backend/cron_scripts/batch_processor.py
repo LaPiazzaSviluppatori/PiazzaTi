@@ -134,6 +134,8 @@ class JDBatchProcessor:
 class CVBatchProcessor:
     def __init__(self):
         self.cvs_path = NLP_PATH / "data" / "cvs"
+        # Also consider cvs_processed where files may be moved after parsing
+        self.cvs_processed_path = NLP_PATH / "data" / "cvs_processed"
         self.dataset_path = NLP_PATH / "Dataset"
         self.output_path = self.dataset_path / "normalized"
         self.cv_json_script = "cv_json_to_dataset_processor.py"
@@ -204,34 +206,42 @@ class CVBatchProcessor:
 
     def _find_date_folders(self, start_date, end_date) -> List[Path]:
         folders: List[Path] = []
-        if not self.cvs_path.exists():
-            logger.warning("cvs_path non esiste: %s", self.cvs_path)
+        # Consider both `cvs` and `cvs_processed` for legacy and processed files.
+        bases = [self.cvs_path, self.cvs_processed_path]
+        any_base_exists = any(b.exists() for b in bases)
+        if not any_base_exists:
+            logger.warning("Nessuna cartella cvs trovata tra: %s, %s", self.cvs_path, self.cvs_processed_path)
             return folders
 
-        # Modalità legacy: se esistono sottocartelle con nome data (YYYY-MM-DD),
-        # usale per filtrare il range.
-        for child in sorted(self.cvs_path.iterdir()):
-            if not child.is_dir():
+        # Modalità legacy: cerca sottocartelle con nome data (YYYY-MM-DD)
+        for base in bases:
+            if not base.exists():
                 continue
-            try:
-                d = datetime.fromisoformat(child.name).date()
-            except Exception:
-                continue
-            if start_date <= d <= end_date:
-                folders.append(child)
+            for child in sorted(base.iterdir()):
+                if not child.is_dir():
+                    continue
+                try:
+                    d = datetime.fromisoformat(child.name).date()
+                except Exception:
+                    continue
+                if start_date <= d <= end_date:
+                    folders.append(child)
 
-        # Nuova modalità (flat): se NON abbiamo trovato cartelle data ma ci sono
-        # JSON direttamente sotto cvs_path, tratta l'intera cartella come un
-        # unico "bucket" da processare.
+        # Nuova modalità (flat): se non sono state trovate cartelle per date,
+        # cerca JSON direttamente sotto `cvs` e `cvs_processed` e usa le cartelle
+        # che contengono JSON come bucket singoli.
         if not folders:
-            json_files = list(self.cvs_path.glob("*.json"))
-            if json_files:
-                logger.info(
-                    "Rilevata struttura flat in %s ( %d JSON ). Uso cartella base senza filtro date.",
-                    self.cvs_path,
-                    len(json_files),
-                )
-                folders.append(self.cvs_path)
+            json_count = 0
+            for base in bases:
+                if not base.exists():
+                    continue
+                js = list(base.glob("*.json"))
+                json_count += len(js)
+                if js:
+                    logger.info("Rilevata struttura flat in %s ( %d JSON ).", base, len(js))
+                    folders.append(base)
+            if json_count == 0:
+                logger.warning("Nessun JSON da processare nelle cartelle cvs/cvs_processed")
 
         return folders
 
