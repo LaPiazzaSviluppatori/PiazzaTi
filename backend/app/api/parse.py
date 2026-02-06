@@ -25,8 +25,12 @@ from fastapi.encoders import jsonable_encoder
 from datetime import datetime
 import subprocess
 import sys
+import logging
 from fastapi import Depends, APIRouter, File, UploadFile, Form, HTTPException
 router = APIRouter(prefix="/parse", tags=["parse"])
+
+# Module logger
+logger = logging.getLogger(__name__)
 
 
 def _save_parsed_cv_to_db(db: Session, user_id: str, doc_parsed) -> Document:
@@ -85,17 +89,17 @@ def _start_batch_process(process_date: str | None = None) -> None:
         pd = process_date or datetime.now().strftime("%Y-%m-%d")
         script_path = Path(__file__).parent.parent.parent / "cron_scripts" / "batch_processor.py"
         if not script_path.exists():
-            print(f"Batch processor script non trovato: {script_path}")
+            logger.error("Batch processor script non trovato: %s", script_path)
             return
         cmd = [sys.executable, str(script_path), "--process-date", pd]
-        print("Avviando batch processor:", " ".join(cmd))
+        logger.info("Avviando batch processor: %s", " ".join(cmd))
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
         if result.returncode != 0:
-            print(f"Batch processor fallito (code={result.returncode}):", result.stderr)
+            logger.error("Batch processor fallito (code=%d): %s", result.returncode, result.stderr)
         else:
-            print("Batch processor completato. stdout:", result.stdout[:1000])
+            logger.info("Batch processor completato. stdout len=%d", len(result.stdout))
     except Exception as e:
-        print("Errore avviando batch processor:", str(e))
+        logger.exception("Errore avviando batch processor: %s", str(e))
 
 
 @router.post("/upload_db")
@@ -130,6 +134,7 @@ async def upload_and_save_cv(
     try:
         if background_tasks is not None:
             process_date = datetime.now().strftime("%Y-%m-%d")
+            logger.info("Scheduling batch process for date %s (upload_db)", process_date)
             background_tasks.add_task(_start_batch_process, process_date)
     except Exception as e:
         print("Impossibile schedulare batch automatico:", str(e))
@@ -368,10 +373,10 @@ if MULTIPART_AVAILABLE:
                     # Avvia pipeline batch (embeddings) per la data odierna
                     try:
                         process_date = datetime.now().strftime("%Y-%m-%d")
-                        # _bg is already running in background, we can call start directly
+                        logger.info("Starting batch process from background job for date %s", process_date)
                         _start_batch_process(process_date)
                     except Exception as e:
-                        print("Impossibile avviare batch automatico nel background:", str(e))
+                        logger.exception("Impossibile avviare batch automatico nel background: %s", str(e))
 
                     # Store successful result
                     parsed_data = (
@@ -394,7 +399,7 @@ if MULTIPART_AVAILABLE:
                         "summary": display_parsing_results(doc)
                     }
                     
-                    print(f"Background parse finished: {task_id} (user_id={getattr(doc, 'user_id', None)})")
+                    logger.info("Background parse finished: %s (user_id=%s)", task_id, getattr(doc, 'user_id', None))
                 except Exception as e:
                     # Store error result
                     import traceback as _tb
@@ -406,7 +411,7 @@ if MULTIPART_AVAILABLE:
                         "error": str(e),
                         "traceback": _tb.format_exc()
                     }
-                    print(f"Background parse failed: {task_id} - {e}")
+                    logger.error("Background parse failed: %s - %s", task_id, str(e))
                 finally:
                     try:
                         db_bg.close()
@@ -456,9 +461,10 @@ if MULTIPART_AVAILABLE:
                 try:
                     if background_tasks is not None:
                         process_date = datetime.now().strftime("%Y-%m-%d")
+                        logger.info("Scheduling batch process for date %s (sync upload)", process_date)
                         background_tasks.add_task(_start_batch_process, process_date)
                 except Exception as e:
-                    print("Impossibile schedulare batch automatico (sync path):", str(e))
+                    logger.exception("Impossibile schedulare batch automatico (sync path): %s", str(e))
 
                 text_summary = display_parsing_results(doc)
                 parsed = (
@@ -486,8 +492,7 @@ if MULTIPART_AVAILABLE:
 
                 tb = _tb.format_exc()
                 # Log to server console as well
-                print("Synchronous parse failed:", str(e))
-                print(tb)
+                logger.exception("Synchronous parse failed: %s", str(e))
                 return JSONResponse(
                     status_code=500,
                     content={"error": str(e), "traceback": tb},

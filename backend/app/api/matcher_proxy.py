@@ -1,5 +1,5 @@
 import os
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -43,4 +43,26 @@ async def proxy_match_cv_jd(request: MatchRequest):
         return result
     except Exception as e:
         # Propaga l'errore al frontend con codice 502 come in precedenza
+        raise HTTPException(status_code=502, detail=f"Matcher internal error: {str(e)}")
+
+
+@router.get("/match_cv_jd")
+async def proxy_match_cv_jd_get(user_id: str = Query(...), jd_id: str = Query(...)):
+    """Compatibilità GET per chiamate dirette (es. curl). Usa gli stessi parametri del POST.
+
+    Esegue il match CV↔JD usando `user_id` e `jd_id` passati come query params.
+    """
+    if compare_cv_with_jd is None:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Matcher interno non disponibile: impossibile importare NLP.single_match. "
+                "Verifica Python path e presenza della cartella NLP nel container backend."
+            ),
+        )
+
+    try:
+        result = compare_cv_with_jd(user_id=user_id, jd_id=jd_id)
+        return result
+    except Exception as e:
         raise HTTPException(status_code=502, detail=f"Matcher internal error: {str(e)}")

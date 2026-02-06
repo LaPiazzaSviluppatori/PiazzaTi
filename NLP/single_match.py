@@ -17,6 +17,7 @@ AGGIORNAMENTO v1.3.0:
 import json
 import re
 import warnings
+import difflib
 from pathlib import Path
 from typing import Dict, Set, Tuple, Optional, List, Any
 from datetime import datetime
@@ -120,9 +121,16 @@ def load_embeddings(csv_path: Path) -> Tuple[pd.DataFrame, Dict[str, np.ndarray]
     """Carica embeddings da CSV"""
     df = pd.read_csv(csv_path)
     id_col = 'user_id' if 'user_id' in df.columns else 'jd_id'
+
+    # Ensure IDs are strings to avoid mismatches between int/str during lookup
+    try:
+        df[id_col] = df[id_col].astype(str)
+    except Exception:
+        df[id_col] = df[id_col].apply(lambda x: '' if pd.isna(x) else str(x))
+
     embeddings_dict = {}
     for _, row in df.iterrows():
-        entity_id = row[id_col]
+        entity_id = str(row[id_col])
         embedding = np.array(json.loads(row['embedding_vector']))
         embeddings_dict[entity_id] = embedding
     return df, embeddings_dict
@@ -132,6 +140,20 @@ def load_normalized_datasets(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame
     """Carica dataset normalizzati CV e JD"""
     cv_data = pd.read_csv(config.CV_DATASET_PATH)
     jd_data = pd.read_csv(config.JD_DATASET_PATH)
+
+    # Ensure identifier columns are strings to match embeddings keys
+    if 'user_id' in cv_data.columns:
+        try:
+            cv_data['user_id'] = cv_data['user_id'].astype(str)
+        except Exception:
+            cv_data['user_id'] = cv_data['user_id'].apply(lambda x: '' if pd.isna(x) else str(x))
+
+    if 'jd_id' in jd_data.columns:
+        try:
+            jd_data['jd_id'] = jd_data['jd_id'].astype(str)
+        except Exception:
+            jd_data['jd_id'] = jd_data['jd_id'].apply(lambda x: '' if pd.isna(x) else str(x))
+
     return cv_data, jd_data
 
 
@@ -803,12 +825,49 @@ def build_json(user_id: str, jd_id: str, features: Dict, score: Dict,
 
 def validate_inputs(user_id: str, jd_id: str, data: dict) -> Tuple[bool, Optional[str]]:
     """Valida che user_id e jd_id esistano nei dataset."""
-    if user_id not in data['cv_emb_df']['user_id'].values:
-        return False, f"USER_ID '{user_id}' non trovato nel dataset CV"
-    
-    if jd_id not in data['jd_emb_df']['jd_id'].values:
-        return False, f"JD_ID '{jd_id}' non trovato nel dataset JD"
-    
+    # Collect available ids from embeddings and datasets (as strings)
+    try:
+        cv_ids = set(map(str, data['cv_emb_df']['user_id'].values))
+    except Exception:
+        cv_ids = set()
+
+    try:
+        cv_dataset_ids = set(map(str, data['cv_data']['user_id'].values))
+    except Exception:
+        cv_dataset_ids = set()
+
+    try:
+        jd_ids = set(map(str, data['jd_emb_df']['jd_id'].values))
+    except Exception:
+        jd_ids = set()
+
+    try:
+        jd_dataset_ids = set(map(str, data['jd_data']['jd_id'].values))
+    except Exception:
+        jd_dataset_ids = set()
+
+    # Check user_id presence (prefer embeddings first)
+    if user_id not in cv_ids and user_id not in cv_dataset_ids:
+        sample = list(cv_dataset_ids or cv_ids)[:5]
+        suggestions = difflib.get_close_matches(user_id, list(cv_dataset_ids or cv_ids), n=5, cutoff=0.4)
+        hint = ''
+        if sample:
+            hint = f"Esempi presenti: {sample}."
+        if suggestions:
+            hint = (hint + ' Suggerimenti simili: ' + str(suggestions)) if hint else ('Suggerimenti simili: ' + str(suggestions))
+        return False, f"USER_ID '{user_id}' non trovato nel dataset CV. {hint}"
+
+    # Check jd_id presence
+    if jd_id not in jd_ids and jd_id not in jd_dataset_ids:
+        sample = list(jd_dataset_ids or jd_ids)[:5]
+        suggestions = difflib.get_close_matches(jd_id, list(jd_dataset_ids or jd_ids), n=5, cutoff=0.4)
+        hint = ''
+        if sample:
+            hint = f"Esempi presenti: {sample}."
+        if suggestions:
+            hint = (hint + ' Suggerimenti simili: ' + str(suggestions)) if hint else ('Suggerimenti simili: ' + str(suggestions))
+        return False, f"JD_ID '{jd_id}' non trovato nel dataset JD. {hint}"
+
     return True, None
 
 
@@ -874,8 +933,28 @@ def match_cv_jd(user_id: str = Query(...), jd_id: str = Query(...)):
     try:
         result = compare_cv_with_jd(user_id, jd_id)
         return result
+    except ValueError as e:
+        # Known validation error (missing ids etc.) -> return 404 with message
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        # Unexpected errors -> internal server error with clear prefix
+        raise HTTPException(status_code=500, detail=f"Matcher internal error: {str(e)}")
+
+
+@app.post("/api/match_cv_jd")
+async def match_cv_jd_post(request: MatchRequest):
+    """POST compatibile: accetta JSON con `user_id` e `jd_id` e richiama lo stesso matcher.
+
+    Permette al frontend e a tool come `curl -X POST -d '{"user_id":"...","jd_id":"..."}'`
+    di usare l'API in modo sicuro.
+    """
+    try:
+        result = compare_cv_with_jd(request.user_id, request.jd_id)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Matcher internal error: {str(e)}")
 
 # Per test locale: uvicorn single_match:app --reload
 if __name__ == "__main__":

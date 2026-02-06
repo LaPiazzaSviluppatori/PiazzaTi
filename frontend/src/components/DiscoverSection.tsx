@@ -86,7 +86,7 @@ export const DiscoverSection = ({
       });
       if (!response.ok) throw new Error(await response.text());
       const result = await response.json();
-      const score = Math.round(result.score ?? result.overall_score ?? 0);
+      const score = Math.round((result.score ?? result.overall_score ?? 0) * 100);
       setRealScores((prev) => ({ ...prev, [jdId]: score }));
       toast({ title: "Match calcolato", description: `Score da motore NLP: ${score}%` });
     } catch (err) {
@@ -115,7 +115,7 @@ export const DiscoverSection = ({
       }
       const result = await response.json();
       setXaiData(result);
-      const score = Math.round(result.score ?? result.overall_score ?? 0);
+      const score = Math.round((result.score ?? result.overall_score ?? 0) * 100);
       toast({
         title: "Match calcolato",
         description: `Score da motore NLP: ${score}%`,

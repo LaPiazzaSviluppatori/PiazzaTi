@@ -311,11 +311,11 @@ export const CandidateSection = ({
       }
       const data = await response.json();
       if (typeof data.score === "number") {
-        setRealCompatibility(data.score);
+        setRealCompatibility(Math.round((data.score ?? 0) * 100));
       }
       toast({
         title: "Compatibilità calcolata!",
-        description: `Score: ${data.score ?? JSON.stringify(data)}`,
+        description: `Score: ${Math.round(((data.score ?? 0) * 100))}%`,
       });
     } catch (err) {
       toast({ title: "Errore di rete", description: String(err), variant: "destructive" });
