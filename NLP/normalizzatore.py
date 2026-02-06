@@ -13,6 +13,21 @@ from typing import Dict, List, Set, Tuple, Optional
 from datetime import datetime
 from dateutil import parser
 from collections import defaultdict
+import logging
+
+# Logging
+LOG_DIR = OUTPUT_DIR / "logs"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+LOG_FILE = LOG_DIR / "normalizzatore.log"
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(str(LOG_FILE)),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 # ============================================================================
 # CONFIGURAZIONE
@@ -34,7 +49,7 @@ OUTPUT_JD = OUTPUT_DIR / "jd_dataset_normalized.csv"
 class SkillOntology:
 
     def __init__(self, ontology_path: Path):
-        print(f"Caricamento ontologia da: {ontology_path}")
+        logger.info(f"Caricamento ontologia da: {ontology_path}")
         self.ontology_path = ontology_path
 
         with open(ontology_path, 'r', encoding='utf-8') as f:
@@ -57,12 +72,12 @@ class SkillOntology:
         previous_unmapped = self.data.get('unmapped_skills', {}).get('skills', [])
         self.previous_unmapped = {item['skill'] for item in previous_unmapped}
 
-        print(f"  Mappature skill: {len(self.skill_mappings)}")
-        print(f"  Mappature seniority: {len(self.seniority_mappings)}")
-        print(f"  Mappature CEFR: {len(self.cefr_mappings)}")
+        logger.info(f"  Mappature skill: {len(self.skill_mappings)}")
+        logger.info(f"  Mappature seniority: {len(self.seniority_mappings)}")
+        logger.info(f"  Mappature CEFR: {len(self.cefr_mappings)}")
         if self.previous_unmapped:
-            print(f"  Skill da mappare: {len(self.previous_unmapped)}")
-        print()
+            logger.info(f"  Skill da mappare: {len(self.previous_unmapped)}")
+        logger.debug("")
 
     def normalize_skill(self, skill: str) -> str:
         if not skill or pd.isna(skill):
@@ -116,7 +131,7 @@ class SkillOntology:
             return "senior"
 
     def save_updated_ontology(self):
-        print(f"\nAggiornamento ontologia...")
+        logger.info("Aggiornamento ontologia...")
 
         new_unmapped = [
             {
@@ -152,21 +167,21 @@ class SkillOntology:
         with open(self.ontology_path, 'w', encoding='utf-8') as f:
             json.dump(self.data, f, indent=2, ensure_ascii=False)
 
-        print(f"  Aggiornata: {self.ontology_path}")
-        print(f"  Skill non mappate: {len(existing_unmapped)}")
+        logger.info(f"  Aggiornata: {self.ontology_path}")
+        logger.info(f"  Skill non mappate: {len(existing_unmapped)}")
 
         if len(new_unmapped) > 0:
-            print(f"  Nuove skill: {len(new_unmapped)}")
-            print(f"\n  Top 10 skill da mappare:")
+            logger.info(f"  Nuove skill: {len(new_unmapped)}")
+            logger.info("  Top 10 skill da mappare:")
             for item in new_unmapped[:10]:
-                print(f"    {item['skill']:35} (freq: {item['frequency']:3})")
+                logger.info(f"    {item['skill']:35} (freq: {item['frequency']:3})")
 
         if len(existing_unmapped) > 0:
-            print(f"\n  Azione richiesta: rivedi unmapped_skills in {self.ontology_path}")
+            logger.info(f"  Azione richiesta: rivedi unmapped_skills in {self.ontology_path}")
         else:
-            print(f"\n  Tutte le skill sono mappate")
+            logger.info(f"  Tutte le skill sono mappate")
 
-        print()
+        logger.debug("")
 
 # ============================================================================
 # PARSING DATE
@@ -313,13 +328,13 @@ def extract_salary_range(salary_str: str) -> str:
 # ============================================================================
 
 def normalize_cv_dataset(input_path: Path, output_path: Path, ontology: SkillOntology) -> pd.DataFrame:
-    print(f"\n{'='*80}")
-    print(f"NORMALIZZAZIONE DATASET CV")
-    print(f"{'='*80}\n")
+    logger.info("%s", "="*80)
+    logger.info("NORMALIZZAZIONE DATASET CV")
+    logger.info("%s\n", "="*80)
 
-    print(f"Caricamento: {input_path}")
+    logger.info(f"Caricamento: {input_path}")
     df = pd.read_csv(input_path)
-    print(f"Righe caricate: {len(df)}\n")
+    logger.info(f"Righe caricate: {len(df)}")
 
     # Sanitizza le colonne testuali per evitare errori di tipo (es. float/NaN)
     # che causano TypeError quando si applicano slice tipo [:80].
@@ -333,62 +348,62 @@ def normalize_cv_dataset(input_path: Path, output_path: Path, ontology: SkillOnt
             df[col] = df[col].fillna("").astype(str)
 
     if len(df) == 0:
-        print("CV dataset vuoto: nessuna normalizzazione necessaria.")
-        print(f"Salvataggio: {output_path}")
+        logger.info("CV dataset vuoto: nessuna normalizzazione necessaria.")
+        logger.info(f"Salvataggio: {output_path}")
         df.to_csv(output_path, index=False)
-        print(f"Salvato\n")
+        logger.info("Salvato")
         return df
 
-    print("Normalizzazione skills...")
+    logger.info("Normalizzazione skills...")
     df['skills_normalized'] = df['skills'].apply(
         lambda x: normalize_skills_string(x, ontology)
     )
-    print(f"  Prima:  {df['skills'].iloc[0][:80]}...")
-    print(f"  Dopo:   {df['skills_normalized'].iloc[0][:80]}...\n")
+    logger.debug(f"  Prima:  {df['skills'].iloc[0][:80]}...")
+    logger.debug(f"  Dopo:   {df['skills_normalized'].iloc[0][:80]}...")
 
-    print("Normalizzazione lingue...")
+    logger.info("Normalizzazione lingue...")
     df['languages_normalized'] = df['languages'].apply(
         lambda x: normalize_languages_string(x, ontology)
     )
-    print(f"  Prima: {df['languages'].iloc[0]}")
-    print(f"  Dopo:  {df['languages_normalized'].iloc[0]}\n")
+    logger.debug(f"  Prima: {df['languages'].iloc[0]}")
+    logger.debug(f"  Dopo:  {df['languages_normalized'].iloc[0]}")
 
-    print("Calcolo seniority da anni di esperienza...")
+    logger.info("Calcolo seniority da anni di esperienza...")
     seniority_data = df['experience'].apply(infer_seniority_from_experience)
     df['inferred_seniority'] = seniority_data.apply(lambda x: x[0])
     df['years_of_experience'] = seniority_data.apply(lambda x: x[1])
 
-    print(f"  Distribuzione seniority:")
+    logger.info("  Distribuzione seniority:")
     for level, count in df['inferred_seniority'].value_counts().items():
         avg_years = df[df['inferred_seniority'] == level]['years_of_experience'].mean()
-        print(f"    {level:8} {count:3} ({count/len(df)*100:5.1f}%)  →  media {avg_years:.1f} anni")
+        logger.info(f"    {level:8} {count:3} ({count/len(df)*100:5.1f}%)  →  media {avg_years:.1f} anni")
 
-    print(f"\n  Statistiche esperienza:")
-    print(f"    Min:    {df['years_of_experience'].min():.1f} anni")
-    print(f"    Media:  {df['years_of_experience'].mean():.1f} anni")
-    print(f"    Max:    {df['years_of_experience'].max():.1f} anni")
-    print()
+    logger.info("  Statistiche esperienza:")
+    logger.info(f"    Min:    {df['years_of_experience'].min():.1f} anni")
+    logger.info(f"    Media:  {df['years_of_experience'].mean():.1f} anni")
+    logger.info(f"    Max:    {df['years_of_experience'].max():.1f} anni")
+    logger.debug("")
 
-    print("Normalizzazione salary...")
+    logger.info("Normalizzazione salary...")
     df['pref_salary_normalized'] = df['pref_salary_expectation'].apply(extract_salary_range)
 
     valid = df[df['pref_salary_normalized'] != ""]
-    print(f"  Normalizzati: {len(valid)}/{len(df)}")
+    logger.info(f"  Normalizzati: {len(valid)}/{len(df)}")
 
     if len(valid) > 0:
-        print(f"\n  Esempi:")
+        logger.info("  Esempi:")
         for idx in valid.head(5).index:
             orig = df.loc[idx, 'pref_salary_expectation']
             norm = df.loc[idx, 'pref_salary_normalized']
-            print(f"    {orig:30} → {norm}")
-    print()
+            logger.info(f"    {orig:30} → {norm}")
+    logger.debug("")
 
-    print("Normalizzazione tags...")
+    logger.info("Normalizzazione tags...")
 
     tag_columns = [col for col in df.columns if col.startswith('tag_')]
 
     if tag_columns:
-        print(f"  Trovate {len(tag_columns)} colonne tag:")
+        logger.info(f"  Trovate {len(tag_columns)} colonne tag:")
 
         for tag_col in tag_columns:
             tag_name = tag_col.replace('tag_', '')
@@ -396,9 +411,9 @@ def normalize_cv_dataset(input_path: Path, output_path: Path, ontology: SkillOnt
             after_true = (df[tag_col] == True).sum()
             print(f"    {tag_name:25} {after_true:3} True, {len(df) - after_true:3} None")
 
-        print(f"\n  Distribuzione candidati:")
+        logger.info(f"  Distribuzione candidati:")
         has_any_tag = df[tag_columns].any(axis=1).sum()
-        print(f"    Con almeno 1 tag: {has_any_tag}/{len(df)} ({has_any_tag/len(df)*100:.1f}%)")
+        logger.info(f"    Con almeno 1 tag: {has_any_tag}/{len(df)} ({has_any_tag/len(df)*100:.1f}%)")
 
         num_tags = df[tag_columns].sum(axis=1)
         for n in range(1, int(num_tags.max()) + 1):
@@ -406,32 +421,32 @@ def normalize_cv_dataset(input_path: Path, output_path: Path, ontology: SkillOnt
             if count > 0:
                 print(f"    Con {n} tag(s): {count:3} ({count/len(df)*100:.1f}%)")
     else:
-        print(f"  Nessuna colonna tag trovata")
-    print()
+        logger.info("  Nessuna colonna tag trovata")
+    logger.debug("")
 
-    print(f"Salvataggio: {output_path}")
+    logger.info(f"Salvataggio: {output_path}")
     df.to_csv(output_path, index=False)
-    print(f"Salvato\n")
+    logger.info("Salvato")
 
     return df
 
 def normalize_jd_dataset(input_path: Path, output_path: Path, ontology: SkillOntology) -> pd.DataFrame:
-    print(f"\n{'='*80}")
-    print(f"NORMALIZZAZIONE DATASET JD")
-    print(f"{'='*80}\n")
+    logger.info("%s", "="*80)
+    logger.info("NORMALIZZAZIONE DATASET JD")
+    logger.info("%s\n", "="*80)
 
-    print(f"Caricamento: {input_path}")
+    logger.info(f"Caricamento: {input_path}")
     df = pd.read_csv(input_path)
-    print(f"Righe caricate: {len(df)}\n")
+    logger.info(f"Righe caricate: {len(df)}")
 
     if len(df) == 0:
-        print("JD dataset vuoto: nessuna normalizzazione necessaria.")
-        print(f"Salvataggio: {output_path}")
+        logger.info("JD dataset vuoto: nessuna normalizzazione necessaria.")
+        logger.info(f"Salvataggio: {output_path}")
         df.to_csv(output_path, index=False)
-        print(f"Salvato\n")
+        logger.info("Salvato")
         return df
 
-    print("Normalizzazione requirements...")
+    logger.info("Normalizzazione requirements...")
     df['requirements_normalized'] = df['requirements'].apply(
         lambda x: normalize_skills_string(x, ontology)
     )
@@ -441,7 +456,7 @@ def normalize_jd_dataset(input_path: Path, output_path: Path, ontology: SkillOnt
         print(f"  Prima: {req_before[:80]}...")
         print(f"  Dopo:  {req_after[:80]}...\n")
 
-    print("Normalizzazione nice_to_have...")
+    logger.info("Normalizzazione nice_to_have...")
     df['nice_to_have_normalized'] = df['nice_to_have'].apply(
         lambda x: normalize_skills_string(x, ontology)
     )
@@ -451,7 +466,7 @@ def normalize_jd_dataset(input_path: Path, output_path: Path, ontology: SkillOnt
         print(f"  Prima: {nth_before[:80]}...")
         print(f"  Dopo:  {nth_after[:80]}...\n")
 
-    print("Normalizzazione seniority...")
+    logger.info("Normalizzazione seniority...")
     df['constraints_seniority_normalized'] = df['constraints_seniority'].apply(
         lambda x: ontology.normalize_seniority(x)
     )
@@ -459,14 +474,14 @@ def normalize_jd_dataset(input_path: Path, output_path: Path, ontology: SkillOnt
         print(f"    {level:8} {count:3}")
     print()
 
-    print("Normalizzazione lingue...")
+    logger.info("Normalizzazione lingue...")
     df['constraints_languages_normalized'] = df['constraints_languages'].apply(
         lambda x: normalize_languages_string(x, ontology)
     )
-    print(f"  Prima: {df['constraints_languages'].iloc[0]}")
-    print(f"  Dopo:  {df['constraints_languages_normalized'].iloc[0]}\n")
+    logger.debug(f"  Prima: {df['constraints_languages'].iloc[0]}")
+    logger.debug(f"  Dopo:  {df['constraints_languages_normalized'].iloc[0]}")
 
-    print("Normalizzazione salary...")
+    logger.info("Normalizzazione salary...")
 
     def rebuild_salary_string(row):
         sal_min = row.get('salary_min')
@@ -493,7 +508,7 @@ def normalize_jd_dataset(input_path: Path, output_path: Path, ontology: SkillOnt
     df.drop(columns=['_temp_salary'], inplace=True)
 
     valid = df[df['salary_normalized'] != ""]
-    print(f"  Normalizzati: {len(valid)}/{len(df)}")
+    logger.info(f"  Normalizzati: {len(valid)}/{len(df)}")
 
     if len(valid) > 0:
         print(f"\n  Esempi:")
@@ -505,9 +520,9 @@ def normalize_jd_dataset(input_path: Path, output_path: Path, ontology: SkillOnt
             print(f"    {sal_min}-{sal_max} {sal_curr:3} → {norm}")
     print()
 
-    print(f"Salvataggio: {output_path}")
+    logger.info(f"Salvataggio: {output_path}")
     df.to_csv(output_path, index=False)
-    print(f"Salvato\n")
+    logger.info("Salvato")
 
     return df
 
@@ -541,26 +556,26 @@ def main():
 
     ontology.save_updated_ontology()
 
-    print("\n" + "="*80)
-    print("REPORT FINALE")
-    print("="*80)
+    logger.info("%s", "="*80)
+    logger.info("REPORT FINALE")
+    logger.info("%s", "="*80)
 
-    print(f"\nCV normalizzati: {len(cv_df)}")
-    print(f"JD normalizzate: {len(jd_df)}")
-    print(f"Skill mappate: {len(ontology.skill_mappings)}")
+    logger.info(f"CV normalizzati: {len(cv_df)}")
+    logger.info(f"JD normalizzate: {len(jd_df)}")
+    logger.info(f"Skill mappate: {len(ontology.skill_mappings)}")
 
     total_unmapped = len(ontology.data.get('unmapped_skills', {}).get('skills', []))
     if total_unmapped > 0:
-        print(f"Skill da mappare: {total_unmapped}")
+        logger.info(f"Skill da mappare: {total_unmapped}")
     else:
-        print(f"Tutte le skill sono mappate")
+        logger.info(f"Tutte le skill sono mappate")
 
-    print(f"\nOUTPUT:")
-    print(f"  {OUTPUT_CV}")
-    print(f"  {OUTPUT_JD}")
-    print(f"  {ONTOLOGY_FILE} (aggiornato)")
+    logger.info("OUTPUT:")
+    logger.info(f"  {OUTPUT_CV}")
+    logger.info(f"  {OUTPUT_JD}")
+    logger.info(f"  {ONTOLOGY_FILE} (aggiornato)")
 
-    print("="*80 + "\n")
+    logger.info("%s", "="*80)
 
 if __name__ == "__main__":
     main()

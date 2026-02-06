@@ -14,6 +14,7 @@ from functools import wraps
 
 import numpy as np
 import pandas as pd
+import logging
 
 warnings.filterwarnings('ignore')
 
@@ -22,6 +23,20 @@ BASE_DIR = Path.cwd()
 # Use directories relative to the current working NLP folder (no duplicated "NLP" segment)
 EMBEDDINGS_DIR = BASE_DIR / "embeddings"
 OUTPUT_DIR = BASE_DIR / "match_results"
+
+# Logging
+LOG_DIR = OUTPUT_DIR / "logs"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+LOG_FILE = LOG_DIR / "matching.log"
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(str(LOG_FILE)),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 # Config params
 TOP_K = 20
@@ -97,13 +112,14 @@ def validate_embeddings(cv_df: pd.DataFrame, jd_df: pd.DataFrame):
     jd_sample = json.loads(jd_df['embedding_vector'].iloc[0])
     
     if len(cv_sample) != len(jd_sample):
+        logger.error(f"Dimension mismatch: CV={len(cv_sample)}, JD={len(jd_sample)}")
         raise ValueError(f"Dimension mismatch: CV={len(cv_sample)}, JD={len(jd_sample)}")
     
     # Check normalizzazione
     cv_norm = np.linalg.norm(cv_sample)
     jd_norm = np.linalg.norm(jd_sample)
     if not (0.95 <= cv_norm <= 1.05 and 0.95 <= jd_norm <= 1.05):
-        print(f"Warning: Vectors not normalized (CV={cv_norm:.3f}, JD={jd_norm:.3f})")
+        logger.warning(f"Vectors not normalized (CV={cv_norm:.3f}, JD={jd_norm:.3f})")
 
 
 @track_latency
@@ -260,22 +276,26 @@ def main():
     
     # Setup
     OUTPUT_DIR.mkdir(exist_ok=True)
-    
+    logger.info("Starting matching pipeline")
     # Load data
-    print("Loading embeddings...")
-    (cv_df, cv_embeddings), _ = load_embeddings(EMBEDDINGS_DIR / "cv_embeddings.csv")
-    (jd_df, jd_embeddings), _ = load_embeddings(EMBEDDINGS_DIR / "jd_embeddings.csv")
-    print(f"Loaded {len(cv_df)} CVs and {len(jd_df)} JDs")
+    logger.info("Loading embeddings...")
+    try:
+        (cv_df, cv_embeddings), _ = load_embeddings(EMBEDDINGS_DIR / "cv_embeddings.csv")
+        (jd_df, jd_embeddings), _ = load_embeddings(EMBEDDINGS_DIR / "jd_embeddings.csv")
+        logger.info(f"Loaded {len(cv_df)} CVs and {len(jd_df)} JDs")
+    except Exception as e:
+        logger.exception(f"Errore caricamento embeddings: {e}")
+        raise
     
     # Validate
     validate_embeddings(cv_df, jd_df)
-    
     # Execute matching
-    print(f"Matching with TOP_K={TOP_K}...")
+    logger.info(f"Matching with TOP_K={TOP_K}...")
     results = match_all_jds(jd_df, jd_embeddings, cv_df, cv_embeddings)
     
     # Save outputs
     json_path = save_results(results, OUTPUT_DIR)
+    logger.info(f"Saved match results to {json_path}")
     
     # Prepare reranker data
     reranker_df = prepare_reranker_data(results, cv_df, jd_df)
@@ -289,11 +309,11 @@ def main():
     
     sla_passed, p95 = latency_tracker.check_sla()
     
-    print(f"\nResults:")
-    print(f"  Processed: {len(jd_df)} JDs x {len(cv_df)} CVs")
-    print(f"  Quality: EXC={quality_counts['excellent']}, GOOD={quality_counts['good']}, WEAK={quality_counts['weak']}")
-    print(f"  Latency p95: {p95:.1f}ms ({'PASS' if sla_passed else 'FAIL'})")
-    print(f"  Output: {OUTPUT_DIR}/")
+    logger.info("Results summary:")
+    logger.info(f"  Processed: {len(jd_df)} JDs x {len(cv_df)} CVs")
+    logger.info(f"  Quality: EXC={quality_counts['excellent']}, GOOD={quality_counts['good']}, WEAK={quality_counts['weak']}")
+    logger.info(f"  Latency p95: {p95:.1f}ms ({'PASS' if sla_passed else 'FAIL'})")
+    logger.info(f"  Output: {OUTPUT_DIR}/")
 
 
 if __name__ == "__main__":

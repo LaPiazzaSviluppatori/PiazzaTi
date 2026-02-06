@@ -11,6 +11,14 @@ from pathlib import Path
 from typing import List, Dict, Set, Tuple
 from datetime import datetime
 import pandas as pd
+import logging
+
+# Basic logger for this script
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 # Cartella condivisa dei CV JSON DENTRO il container backend.
@@ -410,7 +418,7 @@ def process_files(input_dir: str, output_dir: str, output_file: str):
     processed_folder.mkdir(exist_ok=True)
 
     if not input_path.exists():
-        print(f"Errore: cartella {input_dir} non trovata")
+        logger.error(f"Errore: cartella {input_dir} non trovata")
         return False
 
     processed_folder = input_path.parent / "cvs_processed"
@@ -418,36 +426,35 @@ def process_files(input_dir: str, output_dir: str, output_file: str):
     json_files = list(input_path.glob("*.json"))
 
     if not json_files:
-        print(f"Nessun file JSON trovato in {input_dir}")
+        logger.info(f"Nessun file JSON trovato in {input_dir}")
         return False
 
-    print(f"Trovati {len(json_files)} file JSON")
+    logger.info(f"Trovati {len(json_files)} file JSON in {input_dir}")
     
     # NOVITÀ: scopriamo tutti i tag prima di processare
-    print(f"\nDiscovery tag dinamici...")
+    logger.info("Discovery tag dinamici...")
     all_known_tags = discover_all_tags(input_path)
-    
     if all_known_tags:
-        print(f"  Tag trovati: {sorted(all_known_tags)}")
-        print(f"  Verranno create {len(all_known_tags)} colonne tag")
+        logger.info(f"Tag trovati: {sorted(all_known_tags)}")
+        logger.info(f"Verranno create {len(all_known_tags)} colonne tag")
     else:
-        print(f"  Nessun tag trovato nei JSON")
+        logger.info("Nessun tag trovato nei JSON")
 
     # print(f"\nControllo utenti eliminati...")
     # active_user_ids = get_active_user_ids(input_path)
     # print(f"  Utenti attivi nei JSON: {len(active_user_ids)}")
     # removed_count = clean_deleted_users(full_output_path, active_user_ids)
 
-    print(f"\nControllo duplicati nel dataset esistente...")
+    logger.info("Controllo duplicati nel dataset esistente...")
     existing_sha256, user_id_to_index = get_existing_identifiers(full_output_path)
 
     if existing_sha256 or user_id_to_index:
-        print(f"  SHA256 unici: {len(existing_sha256)}")
-        print(f"  User ID unici: {len(user_id_to_index)}")
+        logger.info(f"SHA256 unici: {len(existing_sha256)}")
+        logger.info(f"User ID unici: {len(user_id_to_index)}")
     else:
-        print(f"  Nessun dataset esistente")
+        logger.info("Nessun dataset esistente")
 
-    print(f"\nAnalisi file JSON...")
+    logger.info("Analisi file JSON...")
 
     files_to_add = []
     files_to_update = []
@@ -461,36 +468,37 @@ def process_files(input_dir: str, output_dir: str, output_file: str):
         if not user_id and not sha256:
             files_no_identifiers.append(json_file.name)
             files_to_add.append(json_file)
+            logger.debug(f"File senza identificatori: {json_file.name}")
 
         elif sha256 and sha256 in existing_sha256:
             files_skipped_sha.append((json_file.name, user_id, sha256))
-            print(f"  SKIP (SHA duplicato): {json_file.name}")
+            logger.info(f"SKIP (SHA duplicato): {json_file.name}")
             # Sposta il file in cvs_processed
             json_file.rename(processed_folder / json_file.name)
 
         elif user_id and user_id in user_id_to_index:
             if sha256 and sha256 not in existing_sha256:
                 files_to_update.append((json_file, user_id, sha256, user_id_to_index[user_id]))
-                print(f"  UPDATE: {json_file.name} -> {user_id}")
+                logger.info(f"UPDATE: {json_file.name} -> {user_id}")
                 # Sposta il file in cvs_processed
                 json_file.rename(processed_folder / json_file.name)
             else:
                 files_skipped_both.append((json_file.name, user_id, sha256))
-                print(f"  SKIP (duplicato): {json_file.name}")
+                logger.info(f"SKIP (duplicato): {json_file.name}")
                 # Sposta il file in cvs_processed
                 json_file.rename(processed_folder / json_file.name)
         else:
             files_to_add.append(json_file)
 
-    print(f"\nRisultato:")
-    print(f"  Nuovi: {len(files_to_add)}")
-    print(f"  Da aggiornare: {len(files_to_update)}")
-    print(f"  Saltati: {len(files_skipped_sha) + len(files_skipped_both)}")
+    logger.info("Risultato analisi JSON")
+    logger.info(f"  Nuovi: {len(files_to_add)}")
+    logger.info(f"  Da aggiornare: {len(files_to_update)}")
+    logger.info(f"  Saltati: {len(files_skipped_sha) + len(files_skipped_both)}")
     if files_no_identifiers:
-        print(f"  Senza identificatori: {len(files_no_identifiers)}")
+        logger.info(f"  Senza identificatori: {len(files_no_identifiers)}")
 
     if not files_to_add and not files_to_update:
-        print("\nNessun file da processare")
+        logger.info("Nessun file da processare")
         return True
 
     rows_to_add = []
@@ -509,14 +517,14 @@ def process_files(input_dir: str, output_dir: str, output_file: str):
                 rows_to_add.append(row)
 
                 user_id = row['user_id'] or 'N/A'
-                print(f"  {json_file.name} -> {user_id}")
+                logger.info(f"Processing new file: {json_file.name} -> {user_id}")
 
                 # Sposta il file in cvs_processed
                 json_file.rename(processed_folder / json_file.name)
 
             except Exception as e:
                 errors.append((json_file.name, str(e)))
-                print(f"  ERRORE: {json_file.name} - {e}")
+                logger.exception(f"ERRORE processing {json_file.name}: {e}")
 
     rows_to_update = []
 
@@ -532,11 +540,11 @@ def process_files(input_dir: str, output_dir: str, output_file: str):
                 row = json_to_row(data, json_file.name, all_known_tags)
                 rows_to_update.append((row_index, row))
 
-                print(f"  {json_file.name} -> {user_id}")
+                logger.info(f"Updating file: {json_file.name} -> {user_id}")
 
             except Exception as e:
                 errors.append((json_file.name, str(e)))
-                print(f"  ERRORE: {json_file.name} - {e}")
+                logger.exception(f"ERRORE updating {json_file.name}: {e}")
             else:
                 # Sposta il file in cvs_processed SOLO dopo averlo letto e processato
                 json_file.rename(processed_folder / json_file.name)
@@ -587,20 +595,22 @@ def process_files(input_dir: str, output_dir: str, output_file: str):
     existing_cols = [c for c in cols if c in final_df.columns]
     final_df = final_df[existing_cols]
 
-    final_df.to_csv(full_output_path, index=False, encoding='utf-8')
+    try:
+        final_df.to_csv(full_output_path, index=False, encoding='utf-8')
+        logger.info(f"Completato: {full_output_path}")
+        logger.info(f"Nuove righe: {len(rows_to_add)}")
+        logger.info(f"Righe aggiornate: {len(rows_to_update)}")
+        logger.info(f"Totale righe: {len(final_df)}")
+        logger.info(f"Colonne totali: {len(final_df.columns)} (di cui {len(tag_cols)} colonne tag)")
 
-    print(f"\nCompletato: {full_output_path}")
-    print(f"Nuove righe: {len(rows_to_add)}")
-    print(f"Righe aggiornate: {len(rows_to_update)}")
-    # if removed_count > 0:
-    #     print(f"Righe eliminate: {removed_count}")
-    print(f"Totale righe: {len(final_df)}")
-    print(f"Colonne totali: {len(final_df.columns)} (di cui {len(tag_cols)} colonne tag)")
+        if errors:
+            logger.warning(f"Errori durante processing: {len(errors)}")
+            for fname, error in errors:
+                logger.warning(f"  {fname}: {error}")
 
-    if errors:
-        print(f"\nErrori: {len(errors)}")
-        for fname, error in errors:
-            print(f"  {fname}: {error}")
+    except Exception as e:
+        logger.exception(f"Errore scrivendo CSV finale {full_output_path}: {e}")
+        return False
 
     return True
 
