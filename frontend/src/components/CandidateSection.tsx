@@ -72,6 +72,28 @@ export const CandidateSection = ({
   progressLabel = "",
   onUploadCV,
 }: CandidateSectionProps) => {
+  // Wrapper per upload CV che lancia anche la pipeline batch
+  const handleUploadCVWithBatch = async (cvFile: File | null, user_id?: string) => {
+    if (!onUploadCV) return;
+    await onUploadCV(cvFile, user_id);
+    // Dopo upload/parse, triggera la pipeline batch
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const resp = await fetch("/api/parse/batch/process", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date: today })
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        toast({ title: "Errore pipeline batch", description: err.detail || resp.statusText, variant: "destructive" });
+      } else {
+        toast({ title: "Pipeline NLP avviata", description: "Elaborazione batch in corso..." });
+      }
+    } catch (e) {
+      toast({ title: "Errore rete batch", description: String(e), variant: "destructive" });
+    }
+  };
   const [candidateData, setCandidateData] = useState<Candidate>(candidate);
   // Versioning modal state
   const [versioningModalOpen, setVersioningModalOpen] = useState(false);
@@ -595,7 +617,7 @@ export const CandidateSection = ({
           <Button
             variant="outline"
             className="w-full mt-2"
-            onClick={() => onUploadCV && onUploadCV(cvFile, user_id)}
+            onClick={() => handleUploadCVWithBatch(cvFile, user_id)}
             disabled={uploading || !cvFile || !onUploadCV}
           >
             <Upload className="h-4 w-4 mr-2" />

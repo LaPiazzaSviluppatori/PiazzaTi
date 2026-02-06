@@ -23,6 +23,8 @@ import importlib.util
 from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
 from datetime import datetime
+import subprocess
+import sys
 from fastapi import Depends, APIRouter, File, UploadFile, Form, HTTPException
 router = APIRouter(prefix="/parse", tags=["parse"])
 
@@ -73,12 +75,36 @@ def _save_parsed_cv_to_db(db: Session, user_id: str, doc_parsed) -> Document:
         return new_doc
 
 
+def _start_batch_process(process_date: str | None = None) -> None:
+    """
+    Avvia lo script `cron_scripts/batch_processor.py` per la data specificata.
+    Se `process_date` è None, usa la data odierna.
+    Funzione pensata per essere eseguita in background (BackgroundTasks).
+    """
+    try:
+        pd = process_date or datetime.now().strftime("%Y-%m-%d")
+        script_path = Path(__file__).parent.parent.parent / "cron_scripts" / "batch_processor.py"
+        if not script_path.exists():
+            print(f"Batch processor script non trovato: {script_path}")
+            return
+        cmd = [sys.executable, str(script_path), "--process-date", pd]
+        print("Avviando batch processor:", " ".join(cmd))
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+        if result.returncode != 0:
+            print(f"Batch processor fallito (code={result.returncode}):", result.stderr)
+        else:
+            print("Batch processor completato. stdout:", result.stdout[:1000])
+    except Exception as e:
+        print("Errore avviando batch processor:", str(e))
+
+
 @router.post("/upload_db")
 async def upload_and_save_cv(
     file: UploadFile = File(...),
     user_id: str = Form(...),
     background: bool = False,
     db: Session = Depends(get_db),
+    background_tasks: BackgroundTasks = None,
 ):
     """Upload CV, parse, salva su Postgres, sostituisce il vecchio CV (is_latest)."""
     if file.content_type not in ("application/pdf",):
@@ -99,6 +125,14 @@ async def upload_and_save_cv(
         pass
 
     new_doc = _save_parsed_cv_to_db(db, user_id, doc_parsed)
+
+    # Avvia pipeline batch (embeddings) in background per la data odierna
+    try:
+        if background_tasks is not None:
+            process_date = datetime.now().strftime("%Y-%m-%d")
+            background_tasks.add_task(_start_batch_process, process_date)
+    except Exception as e:
+        print("Impossibile schedulare batch automatico:", str(e))
 
     return {"message": "CV caricato e salvato", "document_id": str(new_doc.id)}
 
@@ -247,39 +281,8 @@ async def trigger_batch_processing(
     process_date = date or datetime.now().strftime("%Y-%m-%d")
     task_id = f"batch_{process_date}_{int(time.time())}"
     
-    def _batch_processing():
-        try:
-            print(f"🚀 Avvio batch processing per data: {process_date}")
-            
-            # Import del batch processor
-            import subprocess
-            import sys
-            
-            # Path dello script batch processor
-            script_path = Path(__file__).parent.parent.parent / "batch_processor.py"
-            
-            if not script_path.exists():
-                raise FileNotFoundError(f"Batch processor script non trovato: {script_path}")
-            
-            # Esegui batch processing
-            result = subprocess.run([
-                sys.executable, str(script_path), 
-                "--process-date", process_date
-            ], capture_output=True, text=True, timeout=3600)  # 1 ora timeout
-            
-            if result.returncode == 0:
-                print(f"✅ Batch processing completato per {process_date}")
-                print(f"Output: {result.stdout}")
-            else:
-                print(f"❌ Batch processing fallito per {process_date}")
-                print(f"Errore: {result.stderr}")
-                
-        except Exception as e:
-            print(f"❌ Errore batch processing: {e}")
-            import traceback
-            traceback.print_exc()
-    
-    background_tasks.add_task(_batch_processing)
+    # Schedule standardized batch starter (uses `cron_scripts/batch_processor.py`)
+    background_tasks.add_task(_start_batch_process, process_date)
     
     return JSONResponse(
         status_code=202,
@@ -362,6 +365,14 @@ if MULTIPART_AVAILABLE:
                     if user_id:
                         _save_parsed_cv_to_db(db_bg, user_id, doc)
 
+                    # Avvia pipeline batch (embeddings) per la data odierna
+                    try:
+                        process_date = datetime.now().strftime("%Y-%m-%d")
+                        # _bg is already running in background, we can call start directly
+                        _start_batch_process(process_date)
+                    except Exception as e:
+                        print("Impossibile avviare batch automatico nel background:", str(e))
+
                     # Store successful result
                     parsed_data = (
                         doc.model_dump()
@@ -440,6 +451,14 @@ if MULTIPART_AVAILABLE:
                 # Salva anche nel DB come ultimo CV per l'utente (se presente)
                 if user_id:
                     _save_parsed_cv_to_db(db, user_id, doc)
+
+                # Schedule batch processing if possible
+                try:
+                    if background_tasks is not None:
+                        process_date = datetime.now().strftime("%Y-%m-%d")
+                        background_tasks.add_task(_start_batch_process, process_date)
+                except Exception as e:
+                    print("Impossibile schedulare batch automatico (sync path):", str(e))
 
                 text_summary = display_parsing_results(doc)
                 parsed = (
