@@ -41,8 +41,11 @@ async def proxy_match_cv_jd(request: MatchRequest):
         # Chiamata diretta alla funzione principale del matcher
         result = compare_cv_with_jd(user_id=request.cv_path, jd_id=request.jd_path)
         return result
+    except ValueError as e:
+        # Errori noti di validazione (ID non presenti nei dataset del matcher)
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        # Propaga l'errore al frontend con codice 502 come in precedenza
+        # Propaga altri errori interni come 502 per distinguere dai casi di input non valido
         raise HTTPException(status_code=502, detail=f"Matcher internal error: {str(e)}")
 
 
@@ -64,5 +67,9 @@ async def proxy_match_cv_jd_get(user_id: str = Query(...), jd_id: str = Query(..
     try:
         result = compare_cv_with_jd(user_id=user_id, jd_id=jd_id)
         return result
+    except ValueError as e:
+        # Errori noti di validazione (ID non presenti nei dataset del matcher)
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
+        # Propaga altri errori interni come 502 per distinguere dai casi di input non valido
         raise HTTPException(status_code=502, detail=f"Matcher internal error: {str(e)}")
