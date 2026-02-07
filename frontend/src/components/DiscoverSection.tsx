@@ -188,6 +188,44 @@ export const DiscoverSection = ({
     }
   };
 
+  const handleApply = async (jd: JobDescription) => {
+    if (role !== "candidate") return;
+    if (!activeCandidate) {
+      toast({
+        title: "Nessun candidato attivo",
+        description: "Seleziona o crea prima un profilo candidato.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const defaultMessage = `Ciao, vorrei candidarmi per la posizione "${jd.title}".`;
+    const message = window.prompt("Vuoi aggiungere un messaggio alla tua candidatura?", defaultMessage) ?? defaultMessage;
+
+    try {
+      const res = await fetch("/api/contact/apply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jd_id: jd.jd_id, message }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "Errore dal server");
+      }
+      toast({
+        title: "Candidatura inviata",
+        description: "La tua candidatura è stata inviata all'azienda.",
+      });
+    } catch (err) {
+      console.error("Errore invio candidatura", err);
+      toast({
+        title: "Errore candidatura",
+        description: "Non è stato possibile inviare la candidatura. Riprova più tardi.",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Se azienda: mostra profili candidati */}
@@ -415,7 +453,14 @@ export const DiscoverSection = ({
                           </DialogContent>
                         </Dialog>
                       )}
-                      <Button size="sm" className="flex-1" variant="outline">Aggiungi ai preferiti</Button>
+                      <Button
+                        size="sm"
+                        className="flex-1"
+                        variant="outline"
+                        onClick={() => handleApply(jd)}
+                      >
+                        Candidati
+                      </Button>
                     </div>
                   </>
                 </Card>

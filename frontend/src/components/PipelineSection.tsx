@@ -16,7 +16,22 @@ interface PipelineSectionProps {
   companyName?: string | null;
 }
 
-export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode, isParsing, mode = "candidate", onCreateJd, companyName }: PipelineSectionProps) => {
+type CompanyApplication = {
+  id: string;
+  timestamp: string;
+  jd_id: string;
+  candidate_user_id: string;
+  candidate_name?: string | null;
+  candidate_email?: string | null;
+  message: string;
+  company?: string | null;
+};
+
+interface PipelineSectionExtendedProps extends PipelineSectionProps {
+  companyApplications?: CompanyApplication[];
+}
+
+export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode, isParsing, mode = "candidate", onCreateJd, companyName, companyApplications = [] }: PipelineSectionExtendedProps) => {
   const isCompanyMode = mode === "company";
   const pipelineStagesCandidate = [
     { name: "CV Ingest", icon: FileText, input: "CV, Portfolio", output: "Profilo Strutturato" },
@@ -87,6 +102,34 @@ export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode
           jobDescriptions={jobDescriptions}
           companyName={companyName}
         />
+        {companyApplications.length > 0 && (
+          <Card className="p-6">
+            <h3 className="text-lg font-semibold mb-4">Candidature ricevute</h3>
+            <div className="space-y-3 max-h-80 overflow-y-auto pr-1 text-sm">
+              {companyApplications.map((app) => {
+                const jd = jobDescriptions.find((j) => j.jd_id === app.jd_id);
+                return (
+                  <div key={app.id} className="border rounded-lg px-3 py-2 bg-muted/50">
+                    <div className="flex flex-col mb-1">
+                      <span className="font-semibold">
+                        {app.candidate_name || "Candidato"}
+                      </span>
+                      {app.candidate_email && (
+                        <span className="text-xs text-muted-foreground">{app.candidate_email}</span>
+                      )}
+                    </div>
+                    {jd && (
+                      <div className="text-xs text-muted-foreground mb-1">
+                        Per la posizione: {jd.title}
+                      </div>
+                    )}
+                    <p className="text-xs whitespace-pre-wrap">{app.message}</p>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+        )}
         <Card className="p-6">
           <h3 className="text-lg font-semibold mb-4">Top 20 candidati per le tue JD</h3>
           {myJobDescriptions.length === 0 ? (

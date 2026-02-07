@@ -172,6 +172,20 @@ const Index = () => {
   const [inboxOpen, setInboxOpen] = useState(false);
   const [hasUnreadInbox, setHasUnreadInbox] = useState(false);
 
+  // Candidature ricevute lato azienda
+  type CompanyApplication = {
+    id: string;
+    timestamp: string;
+    jd_id: string;
+    candidate_user_id: string;
+    candidate_name?: string | null;
+    candidate_email?: string | null;
+    message: string;
+    company?: string | null;
+  };
+
+  const [companyApplications, setCompanyApplications] = useState<CompanyApplication[]>([]);
+
   const fetchInbox = async () => {
     if (!jwtToken || authRole !== "candidate") return;
     try {
@@ -193,6 +207,24 @@ const Index = () => {
     }
   };
 
+  const fetchCompanyApplications = async () => {
+    if (!jwtToken || authRole !== "company") return;
+    try {
+      const res = await fetch("/api/contact/applications", {
+        headers: {
+          Authorization: `Bearer ${jwtToken}`,
+        },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setCompanyApplications(data as CompanyApplication[]);
+      }
+    } catch {
+      // silenzioso
+    }
+  };
+
   useEffect(() => {
     if (authRole === "candidate" && jwtToken) {
       fetchInbox();
@@ -200,6 +232,11 @@ const Index = () => {
       setInboxMessages([]);
       setInboxOpen(false);
       setHasUnreadInbox(false);
+    }
+    if (authRole === "company" && jwtToken) {
+      fetchCompanyApplications();
+    } else {
+      setCompanyApplications([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authRole, jwtToken]);

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import get_current_user, get_db
 from ..models.user import User
+from ..models.document import Document
 
 router = APIRouter()
 
@@ -131,3 +132,131 @@ async def get_inbox(
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Errore lettura inbox: {e}")
+
+
+class ApplyPayload(BaseModel):
+    jd_id: str
+    message: Optional[str] = None
+
+
+@router.post("/contact/apply")
+async def apply_to_jd(
+    payload: ApplyPayload,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Permette a un candidato di candidarsi a una JD.
+
+    Salva l'applicazione in un file JSONL (applications.jsonl) con info su
+    candidato, JD e azienda destinataria.
+    """
+
+    if current_user.role != "candidate":
+        raise HTTPException(status_code=403, detail="Solo i candidati possono candidarsi alle JD")
+
+    base_dir = Path("/app/data")
+    try:
+        base_dir.mkdir(parents=True, exist_ok=True)
+        log_path = base_dir / "applications.jsonl"
+
+        # Recupera info JD e azienda associata
+        company_name: Optional[str] = None
+        try:
+            jd = db.query(Document).filter(Document.id == payload.jd_id).first()
+            if jd is not None:
+                if jd.parsed_json and isinstance(jd.parsed_json, dict):
+                    company_name = jd.parsed_json.get("company") or company_name
+                if not company_name:
+                    company_name = jd.title
+        except Exception:
+            # Se qualcosa va storto col DB, continuiamo comunque salvando la candidatura
+            pass
+
+        entry: Dict[str, Any] = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "candidate_user_id": str(current_user.id),
+            "candidate_name": getattr(current_user, "name", None),
+            "candidate_email": getattr(current_user, "email", None),
+            "jd_id": payload.jd_id,
+            "company": company_name,
+            "message": payload.message or "",
+        }
+
+        with log_path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+        return {"status": "ok"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore salvataggio candidatura: {e}")
+
+
+class CompanyApplication(BaseModel):
+    id: str
+    timestamp: str
+    jd_id: str
+    candidate_user_id: str
+    candidate_name: Optional[str] = None
+    candidate_email: Optional[str] = None
+    message: str
+    company: Optional[str] = None
+
+
+@router.get("/contact/applications", response_model=List[CompanyApplication])
+async def get_applications(
+    current_user: User = Depends(get_current_user),
+):
+    """Restituisce le candidature ricevute per le JD dell'azienda corrente."""
+
+    if current_user.role != "company":
+        raise HTTPException(status_code=403, detail="Solo le aziende possono vedere le candidature ricevute")
+
+    base_dir = Path("/app/data")
+    log_path = base_dir / "applications.jsonl"
+
+    if not log_path.exists():
+        return []
+
+    try:
+        raw_entries: List[Dict[str, Any]] = []
+        with log_path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    raw = json.loads(line)
+                    raw_entries.append(raw)
+                except json.JSONDecodeError:
+                    continue
+
+        company_name = getattr(current_user, "company", None)
+        if company_name:
+            entries = [e for e in raw_entries if str(e.get("company")) == company_name]
+        else:
+            entries = []
+
+        def parse_ts(ts: str) -> float:
+            try:
+                return datetime.fromisoformat(ts).timestamp()
+            except Exception:
+                return 0.0
+
+        entries.sort(key=lambda e: parse_ts(str(e.get("timestamp", ""))), reverse=True)
+
+        result: List[CompanyApplication] = []
+        for idx, e in enumerate(entries):
+            app = CompanyApplication(
+                id=f"{e.get('timestamp','')}:{idx}",
+                timestamp=str(e.get("timestamp")),
+                jd_id=str(e.get("jd_id")),
+                candidate_user_id=str(e.get("candidate_user_id")),
+                candidate_name=str(e.get("candidate_name")) if e.get("candidate_name") is not None else None,
+                candidate_email=str(e.get("candidate_email")) if e.get("candidate_email") is not None else None,
+                message=str(e.get("message", "")),
+                company=str(e.get("company")) if e.get("company") is not None else None,
+            )
+            result.append(app)
+
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore lettura candidature: {e}")
