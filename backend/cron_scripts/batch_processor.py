@@ -128,6 +128,17 @@ class JDBatchProcessor:
 
         logger.info("Pipeline JD completata")
 
+        # Step 4: Matching CV-JD (se Matching.py presente)
+        matching_script = NLP_PATH / "Matching.py"
+        if matching_script.exists():
+            logger.info("Eseguo Matching CV-JD dopo pipeline JD")
+            try:
+                run_nlp_script("Matching.py")
+            except Exception as e:
+                logger.exception("Errore esecuzione Matching.py dopo pipeline JD: %s", e)
+        else:
+            logger.warning("Matching.py non trovato dopo pipeline JD: %s", matching_script)
+
 # -----------------------------
 # CV Batch Processor
 # -----------------------------

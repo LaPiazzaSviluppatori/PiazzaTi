@@ -29,9 +29,11 @@ if '__file__' in globals():
 else:
     BASE_DIR = Path(os.getcwd())
 
-# I dataset normalizzati sono creati da normalizzatore.py in "Dataset/normalized"
-# relativa alla working directory del backend (/app), non sotto /app/NLP.
-DATASET_DIR = Path("Dataset") / "normalized"
+# I dataset normalizzati sono creati da normalizzatore.py in
+# <project_root>/Dataset/normalized (stessa root usata da cv_json_to_dataset_processor
+# e jd_json_to_dataset_processor). Qui ci allineiamo a quella posizione.
+DATASET_ROOT = BASE_DIR.parent / "Dataset"
+DATASET_DIR = DATASET_ROOT / "normalized"
 EMBEDDINGS_DIR = BASE_DIR / "embeddings"
 
 CV_INPUT = DATASET_DIR / "cv_dataset_normalized.csv"

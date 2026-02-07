@@ -28,8 +28,14 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 
 # I dataset CSV (cv_dataset.csv, jd_dataset.csv) sono creati in "Dataset"
-# relativa alla working directory del backend (/app).
-DATASET_DIR = Path("Dataset")
+# alla root del progetto backend (/app/Dataset), condivisa tra pipeline CV/JD.
+if '__file__' in globals():
+    _BASE_DIR_NORM = Path(__file__).parent
+else:
+    _BASE_DIR_NORM = Path.cwd()
+
+# Posiziona sempre i dataset in <project_root>/Dataset, non sotto NLP/.
+DATASET_DIR = _BASE_DIR_NORM.parent / "Dataset"
 INPUT_CV = DATASET_DIR / "cv_dataset.csv"
 INPUT_JD = DATASET_DIR / "jd_dataset.csv"
 
