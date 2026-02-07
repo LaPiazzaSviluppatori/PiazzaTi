@@ -29,9 +29,10 @@ export const CompanySection = ({
   onCloseShortlist,
   companyName,
 }: CompanySectionProps) => {
-  const storageKey = companyName
-    ? `piazzati:companyPosts:${companyName}`
-    : "piazzati:companyPosts";
+  const baseStorageKey = "piazzati:companyPosts";
+  const companyStorageKey = companyName
+    ? `${baseStorageKey}:${companyName}`
+    : null;
 
   type CompanyPost = { id: string; text: string; images?: string[]; createdAt: string };
 
@@ -39,6 +40,7 @@ export const CompanySection = ({
   const [postText, setPostText] = useState("");
   const [postImageFiles, setPostImageFiles] = useState<File[]>([]);
   const [postImagePreviews, setPostImagePreviews] = useState<string[]>([]);
+  const [editingPostId, setEditingPostId] = useState<string | null>(null);
 
   const postTextAreaRef = useRef<HTMLTextAreaElement | null>(null);
   const postImageInputRef = useRef<HTMLInputElement | null>(null);
@@ -48,10 +50,13 @@ export const CompanySection = ({
   // Carica i post aziendali da localStorage all'avvio / cambio azienda
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(storageKey);
-      if (raw) {
+      const collected: CompanyPost[] = [];
+
+      const loadFromKey = (key: string | null) => {
+        if (!key) return;
+        const raw = localStorage.getItem(key);
+        if (!raw) return;
         const parsed = JSON.parse(raw) as Array<CompanyPost & { image?: string }>;
-        // Normalizza eventuali vecchi post con singola image -> images[0]
         const normalized: CompanyPost[] = parsed.map((p) => {
           if (p.images && p.images.length > 0) return { ...p, images: [...p.images] };
           if (p.image) {
@@ -59,27 +64,55 @@ export const CompanySection = ({
           }
           return { id: p.id, text: p.text, images: [], createdAt: p.createdAt };
         });
-        setPosts(normalized);
-      } else {
+        collected.push(...normalized);
+      };
+
+      // Prima prova a caricare i post globali, poi quelli specifici per azienda
+      loadFromKey(baseStorageKey);
+      loadFromKey(companyStorageKey);
+
+      if (collected.length === 0) {
         setPosts([]);
+        return;
       }
+
+      // Deduplica per id mantenendo l'ordine (prima i più recenti)
+      const seen = new Set<string>();
+      const deduped: CompanyPost[] = [];
+      for (const p of collected) {
+        if (!seen.has(p.id)) {
+          seen.add(p.id);
+          deduped.push(p);
+        }
+      }
+
+      setPosts(deduped);
     } catch {
       setPosts([]);
     }
-  }, [storageKey]);
+  }, [baseStorageKey, companyStorageKey]);
 
   // Salva i post aziendali in localStorage quando cambiano
   useEffect(() => {
     try {
       if (posts.length > 0) {
-        localStorage.setItem(storageKey, JSON.stringify(posts));
+        const serialized = JSON.stringify(posts);
+        // Salva sempre una copia globale
+        localStorage.setItem(baseStorageKey, serialized);
+        // E, se disponibile, una copia specifica per azienda
+        if (companyStorageKey) {
+          localStorage.setItem(companyStorageKey, serialized);
+        }
       } else {
-        localStorage.removeItem(storageKey);
+        localStorage.removeItem(baseStorageKey);
+        if (companyStorageKey) {
+          localStorage.removeItem(companyStorageKey);
+        }
       }
     } catch {
       // ignore storage errors
     }
-  }, [posts, storageKey]);
+  }, [posts, baseStorageKey, companyStorageKey]);
 
   const handlePostImageChange = (files?: FileList | null) => {
     if (!files || files.length === 0) {
@@ -91,29 +124,77 @@ export const CompanySection = ({
     const fileArray = Array.from(files);
     setPostImageFiles(fileArray);
 
-    try {
-      const previews = fileArray.map((f) => URL.createObjectURL(f));
-      setPostImagePreviews(previews);
-    } catch {
-      setPostImagePreviews([]);
-    }
+    const readers = fileArray.map(
+      (file) =>
+        new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            if (typeof reader.result === "string") {
+              resolve(reader.result);
+            } else {
+              reject(new Error("Invalid file result"));
+            }
+          };
+          reader.onerror = () => reject(new Error("Error reading file"));
+          reader.readAsDataURL(file);
+        })
+    );
+
+    Promise.all(readers)
+      .then((urls) => {
+        setPostImagePreviews(urls);
+      })
+      .catch(() => {
+        setPostImagePreviews([]);
+      });
   };
 
   const handleCreatePost = () => {
-    if (!postText.trim() && postImageFiles.length === 0) {
+    if (!postText.trim() && postImagePreviews.length === 0) {
       toast({ title: "Contenuto richiesto", description: "Inserisci testo o carica un'immagine.", variant: "destructive" });
       return;
     }
-    const newPost: CompanyPost = {
-      id: String(Date.now()),
-      text: postText.trim(),
-      images: postImagePreviews.length > 0 ? [...postImagePreviews] : [],
-      createdAt: new Date().toISOString(),
-    };
-    setPosts(prev => [newPost, ...prev]);
+
+    if (editingPostId) {
+      setPosts(prev =>
+        prev.map(p =>
+          p.id === editingPostId
+            ? {
+                ...p,
+                text: postText.trim(),
+                images: postImagePreviews.length > 0 ? [...postImagePreviews] : [],
+              }
+            : p
+        )
+      );
+      toast({ title: "Post aggiornato", description: "Le modifiche al post sono state salvate." });
+    } else {
+      const newPost: CompanyPost = {
+        id: String(Date.now()),
+        text: postText.trim(),
+        images: postImagePreviews.length > 0 ? [...postImagePreviews] : [],
+        createdAt: new Date().toISOString(),
+      };
+      setPosts(prev => [newPost, ...prev]);
+      toast({ title: "Post pubblicato", description: "Il tuo post è visibile nella timeline aziendale." });
+    }
+
     setPostText("");
-    handlePostImageChange(null);
-    toast({ title: "Post pubblicato", description: "Il tuo post è visibile nella timeline aziendale." });
+    setPostImageFiles([]);
+    setPostImagePreviews([]);
+    setEditingPostId(null);
+  };
+
+  const handleDeletePost = (id: string) => {
+    setPosts(prev => prev.filter(p => p.id !== id));
+    toast({ title: "Post eliminato", description: "Il post è stato rimosso dalla timeline." });
+  };
+
+  const handleEditPost = (post: CompanyPost) => {
+    setEditingPostId(post.id);
+    setPostText(post.text);
+    setPostImagePreviews(post.images ?? []);
+    setPostImageFiles([]);
   };
 
   const handleBoldClick = () => {
@@ -529,7 +610,7 @@ export const CompanySection = ({
             </div>
           )}
           <div className="ml-auto">
-            <Button onClick={handleCreatePost}>Pubblica</Button>
+            <Button onClick={handleCreatePost}>{editingPostId ? "Aggiorna" : "Pubblica"}</Button>
           </div>
         </div>
 
@@ -539,8 +620,34 @@ export const CompanySection = ({
           ) : (
             posts.map(p => (
               <div key={p.id} className="p-3 border rounded-lg">
-                <div className="text-sm text-muted-foreground mb-1">{new Date(p.createdAt).toLocaleString()}</div>
-                <div className="mb-2">{p.text}</div>
+                <div className="flex items-start justify-between mb-1">
+                  <div className="text-sm text-muted-foreground">
+                    {new Date(p.createdAt).toLocaleString()}
+                  </div>
+                  <div className="flex gap-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-xs hover:bg-muted/60"
+                      onClick={() => handleEditPost(p)}
+                    >
+                      Aggiorna
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
+                      onClick={() => handleDeletePost(p.id)}
+                    >
+                      Elimina
+                    </Button>
+                  </div>
+                </div>
+                <div className="mb-2 text-sm">
+                  {renderPostText(p.text)}
+                </div>
                 {p.images && p.images.length > 0 && (
                   <div className="w-full flex gap-3 overflow-x-auto mt-1 pb-1">
                     {p.images.map((src, idx) => (
