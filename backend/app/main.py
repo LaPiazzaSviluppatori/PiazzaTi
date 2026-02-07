@@ -8,7 +8,8 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
-from .auth import authenticate_user, create_access_token, get_db
+from .auth import authenticate_user, create_access_token, get_db, get_current_user
+from .models.user import User
 from .register import router as register_router
 from .api.parse import router as parse_router
 from .api.embeddings import router as embeddings_router
@@ -67,6 +68,23 @@ def login_for_access_token(
         )
     access_token = create_access_token(data={"sub": str(user.id)})
     return {"access_token": access_token, "token_type": "bearer"}
+
+
+@app.get("/auth/me")
+def read_users_me(current_user: User = Depends(get_current_user)):
+    """Ritorna le informazioni basilari dell'utente corrente, inclusi dati azienda se presenti."""
+
+    return {
+        "id": str(current_user.id),
+        "email": current_user.email,
+        "name": current_user.name,
+        "surname": getattr(current_user, "surname", None),
+        "role": current_user.role,
+        "company": getattr(current_user, "company", None),
+        "city": getattr(current_user, "city", None),
+        "region": getattr(current_user, "region", None),
+        "country": getattr(current_user, "country", None),
+    }
 
 # Register routers
 app.include_router(parse_router, prefix="/api")

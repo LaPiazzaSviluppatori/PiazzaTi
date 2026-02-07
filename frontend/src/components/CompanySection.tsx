@@ -33,20 +33,33 @@ export const CompanySection = ({
     ? `piazzati:companyPosts:${companyName}`
     : "piazzati:companyPosts";
 
-  const [posts, setPosts] = useState<Array<{ id: string; text: string; image?: string; createdAt: string }>>([]);
-  const [postText, setPostText] = useState("");
-  const [postImageFile, setPostImageFile] = useState<File | null>(null);
-  const [postImagePreview, setPostImagePreview] = useState<string | null>(null);
+  type CompanyPost = { id: string; text: string; images?: string[]; createdAt: string };
 
+  const [posts, setPosts] = useState<CompanyPost[]>([]);
+  const [postText, setPostText] = useState("");
+  const [postImageFiles, setPostImageFiles] = useState<File[]>([]);
+  const [postImagePreviews, setPostImagePreviews] = useState<string[]>([]);
+
+  const postTextAreaRef = useRef<HTMLTextAreaElement | null>(null);
   const postImageInputRef = useRef<HTMLInputElement | null>(null);
+
+  const emojiOptions = ["😊", "🚀", "🎯", "💼", "📣", "🔥"];
 
   // Carica i post aziendali da localStorage all'avvio / cambio azienda
   useEffect(() => {
     try {
       const raw = localStorage.getItem(storageKey);
       if (raw) {
-        const parsed = JSON.parse(raw) as Array<{ id: string; text: string; image?: string; createdAt: string }>;
-        setPosts(parsed);
+        const parsed = JSON.parse(raw) as Array<CompanyPost & { image?: string }>;
+        // Normalizza eventuali vecchi post con singola image -> images[0]
+        const normalized: CompanyPost[] = parsed.map((p) => {
+          if (p.images && p.images.length > 0) return { ...p, images: [...p.images] };
+          if (p.image) {
+            return { id: p.id, text: p.text, images: [p.image], createdAt: p.createdAt };
+          }
+          return { id: p.id, text: p.text, images: [], createdAt: p.createdAt };
+        });
+        setPosts(normalized);
       } else {
         setPosts([]);
       }
@@ -68,30 +81,236 @@ export const CompanySection = ({
     }
   }, [posts, storageKey]);
 
-  const handlePostImageChange = (f?: File | null) => {
-    if (!f) {
-      setPostImageFile(null);
-      setPostImagePreview(null);
+  const handlePostImageChange = (files?: FileList | null) => {
+    if (!files || files.length === 0) {
+      setPostImageFiles([]);
+      setPostImagePreviews([]);
       return;
     }
-    setPostImageFile(f);
+
+    const fileArray = Array.from(files);
+    setPostImageFiles(fileArray);
+
     try {
-      setPostImagePreview(URL.createObjectURL(f));
+      const previews = fileArray.map((f) => URL.createObjectURL(f));
+      setPostImagePreviews(previews);
     } catch {
-      setPostImagePreview(null);
+      setPostImagePreviews([]);
     }
   };
 
   const handleCreatePost = () => {
-    if (!postText.trim() && !postImageFile) {
+    if (!postText.trim() && postImageFiles.length === 0) {
       toast({ title: "Contenuto richiesto", description: "Inserisci testo o carica un'immagine.", variant: "destructive" });
       return;
     }
-    const newPost = { id: String(Date.now()), text: postText.trim(), image: postImagePreview || undefined, createdAt: new Date().toISOString() };
+    const newPost: CompanyPost = {
+      id: String(Date.now()),
+      text: postText.trim(),
+      images: postImagePreviews.length > 0 ? [...postImagePreviews] : [],
+      createdAt: new Date().toISOString(),
+    };
     setPosts(prev => [newPost, ...prev]);
     setPostText("");
     handlePostImageChange(null);
     toast({ title: "Post pubblicato", description: "Il tuo post è visibile nella timeline aziendale." });
+  };
+
+  const handleBoldClick = () => {
+    const textarea = postTextAreaRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart ?? 0;
+    const end = textarea.selectionEnd ?? 0;
+
+    if (start === end) {
+      const insertion = "****";
+      const newText = postText.slice(0, start) + insertion + postText.slice(end);
+      setPostText(newText);
+      requestAnimationFrame(() => {
+        textarea.focus();
+        textarea.selectionStart = start + 2;
+        textarea.selectionEnd = start + 2;
+      });
+      return;
+    }
+
+    const selected = postText.slice(start, end);
+    const newText = postText.slice(0, start) + `**${selected}**` + postText.slice(end);
+    setPostText(newText);
+    requestAnimationFrame(() => {
+      textarea.focus();
+      textarea.selectionStart = start;
+      textarea.selectionEnd = start + selected.length + 4;
+    });
+  };
+
+  const handleItalicClick = () => {
+    const textarea = postTextAreaRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart ?? 0;
+    const end = textarea.selectionEnd ?? 0;
+
+    if (start === end) {
+      const insertion = "__";
+      const newText = postText.slice(0, start) + insertion + postText.slice(end);
+      setPostText(newText);
+      requestAnimationFrame(() => {
+        textarea.focus();
+        textarea.selectionStart = start + 1;
+        textarea.selectionEnd = start + 1;
+      });
+      return;
+    }
+
+    const selected = postText.slice(start, end);
+    const newText = postText.slice(0, start) + `_${selected}_` + postText.slice(end);
+    setPostText(newText);
+    requestAnimationFrame(() => {
+      textarea.focus();
+      textarea.selectionStart = start;
+      textarea.selectionEnd = start + selected.length + 2;
+    });
+  };
+
+  const handleBulletClick = () => {
+    const textarea = postTextAreaRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart ?? 0;
+    const lineStart = postText.lastIndexOf("\n", start - 1) + 1;
+    const newText =
+      postText.slice(0, lineStart) +
+      "- " +
+      postText.slice(lineStart);
+    setPostText(newText);
+    requestAnimationFrame(() => {
+      textarea.focus();
+      const cursor = start + 2;
+      textarea.selectionStart = cursor;
+      textarea.selectionEnd = cursor;
+    });
+  };
+
+  const handleNumberedClick = () => {
+    const textarea = postTextAreaRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart ?? 0;
+    const lineStart = postText.lastIndexOf("\n", start - 1) + 1;
+    const newText =
+      postText.slice(0, lineStart) +
+      "1. " +
+      postText.slice(lineStart);
+    setPostText(newText);
+    requestAnimationFrame(() => {
+      textarea.focus();
+      const cursor = start + 3;
+      textarea.selectionStart = cursor;
+      textarea.selectionEnd = cursor;
+    });
+  };
+
+  const handleInsertEmoji = (emoji: string) => {
+    const textarea = postTextAreaRef.current;
+    if (!textarea) {
+      setPostText(prev => prev + emoji);
+      return;
+    }
+
+    const start = textarea.selectionStart ?? postText.length;
+    const end = textarea.selectionEnd ?? postText.length;
+    const newText = postText.slice(0, start) + emoji + postText.slice(end);
+    setPostText(newText);
+    requestAnimationFrame(() => {
+      textarea.focus();
+      const cursor = start + emoji.length;
+      textarea.selectionStart = cursor;
+      textarea.selectionEnd = cursor;
+    });
+  };
+
+  const renderPostText = (text: string) => {
+    const renderInline = (value: string, keyPrefix: string) => {
+      const tokens = value.split(/(\*\*[^*]+\*\*|_[^_]+_)/g).filter(Boolean);
+      return tokens.map((token, idx) => {
+        if (token.startsWith("**") && token.endsWith("**")) {
+          return (
+            <strong key={`${keyPrefix}-b-${idx}`}>
+              {token.slice(2, -2)}
+            </strong>
+          );
+        }
+        if (token.startsWith("_") && token.endsWith("_")) {
+          return (
+            <em key={`${keyPrefix}-i-${idx}`}>
+              {token.slice(1, -1)}
+            </em>
+          );
+        }
+        return <span key={`${keyPrefix}-t-${idx}`}>{token}</span>;
+      });
+    };
+
+    const lines = text.split("\n");
+    const blocks: { type: "p" | "ul" | "ol"; lines: string[] }[] = [];
+
+    for (const line of lines) {
+      const bulletMatch = line.startsWith("- ");
+      const numberedMatch = /^\d+\.\s+/.test(line);
+
+      if (bulletMatch) {
+        const content = line.slice(2);
+        const last = blocks[blocks.length - 1];
+        if (last && last.type === "ul") {
+          last.lines.push(content);
+        } else {
+          blocks.push({ type: "ul", lines: [content] });
+        }
+      } else if (numberedMatch) {
+        const content = line.replace(/^\d+\.\s+/, "");
+        const last = blocks[blocks.length - 1];
+        if (last && last.type === "ol") {
+          last.lines.push(content);
+        } else {
+          blocks.push({ type: "ol", lines: [content] });
+        }
+      } else {
+        blocks.push({ type: "p", lines: [line] });
+      }
+    }
+
+    return blocks.map((block, blockIndex) => {
+      if (block.type === "ul") {
+        return (
+          <ul key={`b-${blockIndex}`} className="list-disc pl-5 space-y-1">
+            {block.lines.map((l, idx) => (
+              <li key={`b-${blockIndex}-l-${idx}`}>
+                {renderInline(l, `b-${blockIndex}-l-${idx}`)}
+              </li>
+            ))}
+          </ul>
+        );
+      }
+      if (block.type === "ol") {
+        return (
+          <ol key={`b-${blockIndex}`} className="list-decimal pl-5 space-y-1">
+            {block.lines.map((l, idx) => (
+              <li key={`b-${blockIndex}-l-${idx}`}>
+                {renderInline(l, `b-${blockIndex}-l-${idx}`)}
+              </li>
+            ))}
+          </ol>
+        );
+      }
+      // paragraph
+      return (
+        <p key={`b-${blockIndex}`} className="whitespace-pre-wrap">
+          {renderInline(block.lines[0], `b-${blockIndex}-p`)}
+        </p>
+      );
+    });
   };
   const [jdForm, setJdForm] = useState({
     title: "",
@@ -230,14 +449,67 @@ export const CompanySection = ({
       {/* Posts */}
       <Card className="p-6">
         <h3 className="text-lg font-semibold mb-3">Post Aziendali</h3>
-        <Textarea value={postText} onChange={e => setPostText(e.target.value)} placeholder="Condividi aggiornamenti o opportunità..." rows={2} />
+        <Textarea
+          ref={postTextAreaRef}
+          value={postText}
+          onChange={e => setPostText(e.target.value)}
+          placeholder="Condividi aggiornamenti o opportunità..."
+          rows={2}
+        />
+        <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleBoldClick}
+              className="px-2 py-0.5 border rounded font-bold hover:bg-muted/60"
+            >
+              B
+            </button>
+            <button
+              type="button"
+              onClick={handleItalicClick}
+              className="px-2 py-0.5 border rounded italic hover:bg-muted/60"
+            >
+              i
+            </button>
+            <button
+              type="button"
+              onClick={handleBulletClick}
+              className="px-2 py-0.5 border rounded hover:bg-muted/60"
+            >
+              •
+            </button>
+            <button
+              type="button"
+              onClick={handleNumberedClick}
+              className="px-2 py-0.5 border rounded hover:bg-muted/60"
+            >
+              1.
+            </button>
+            <span>Formato</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="mr-1">Emoji:</span>
+            {emojiOptions.map(emoji => (
+              <button
+                key={emoji}
+                type="button"
+                onClick={() => handleInsertEmoji(emoji)}
+                className="px-1.5 py-0.5 rounded hover:bg-muted/60"
+              >
+                {emoji}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="flex items-center gap-3 mt-3">
           <input
             ref={postImageInputRef}
             type="file"
             accept="image/*"
+            multiple
             className="hidden"
-            onChange={e => handlePostImageChange(e.target.files?.[0] || null)}
+            onChange={e => handlePostImageChange(e.target.files)}
           />
           <Button
             type="button"
@@ -247,7 +519,15 @@ export const CompanySection = ({
           >
             Carica immagine
           </Button>
-          {postImagePreview && <div className="w-20 h-20 overflow-hidden rounded"><img src={postImagePreview} alt="preview" className="w-full h-full object-cover" /></div>}
+          {postImagePreviews.length > 0 && (
+            <div className="flex gap-2 max-w-xs overflow-x-auto">
+              {postImagePreviews.map((src, idx) => (
+                <div key={idx} className="w-20 h-20 flex items-center justify-center overflow-hidden rounded bg-muted/40">
+                  <img src={src} alt={`preview-${idx}`} className="max-h-20 w-auto object-contain" />
+                </div>
+              ))}
+            </div>
+          )}
           <div className="ml-auto">
             <Button onClick={handleCreatePost}>Pubblica</Button>
           </div>
@@ -261,7 +541,22 @@ export const CompanySection = ({
               <div key={p.id} className="p-3 border rounded-lg">
                 <div className="text-sm text-muted-foreground mb-1">{new Date(p.createdAt).toLocaleString()}</div>
                 <div className="mb-2">{p.text}</div>
-                {p.image && <img src={p.image} alt="post" className="max-h-48 w-full object-cover rounded" />}
+                {p.images && p.images.length > 0 && (
+                  <div className="w-full flex gap-3 overflow-x-auto mt-1 pb-1">
+                    {p.images.map((src, idx) => (
+                      <div
+                        key={idx}
+                        className="min-w-[160px] max-w-xs max-h-64 flex items-center justify-center overflow-hidden rounded bg-muted/40"
+                      >
+                        <img
+                          src={src}
+                          alt={`post-image-${idx}`}
+                          className="max-h-64 w-auto object-contain"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ))
           )}
