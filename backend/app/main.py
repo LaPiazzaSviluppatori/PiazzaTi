@@ -16,6 +16,7 @@ from .api.embeddings import router as embeddings_router
 from .api.jd import router as jd_router
 from .api.matcher_proxy import router as matcher_proxy_router
 from .api.cv_versioning import router as cv_versioning_router
+from .api.contact import router as contact_router
 from .core.metrics import meter, tracer
 from .core.service_endpoints import router as service_router
 
@@ -91,6 +92,7 @@ app.include_router(parse_router, prefix="/api")
 app.include_router(embeddings_router, prefix="/api")
 app.include_router(jd_router, prefix="/api")
 app.include_router(cv_versioning_router, prefix="/api")
+app.include_router(contact_router, prefix="/api")
 app.include_router(service_router)
 app.include_router(matcher_proxy_router, prefix="/api")
 

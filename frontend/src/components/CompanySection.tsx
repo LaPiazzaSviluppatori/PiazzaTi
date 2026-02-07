@@ -29,9 +29,8 @@ export const CompanySection = ({
   onCloseShortlist,
   companyName,
 }: CompanySectionProps) => {
-  const baseStorageKey = "piazzati:companyPosts";
-  const companyStorageKey = companyName
-    ? `${baseStorageKey}:${companyName}`
+  const storageKey = companyName
+    ? `piazzati:companyPosts:${companyName}`
     : null;
 
   type CompanyPost = { id: string; text: string; images?: string[]; createdAt: string };
@@ -50,69 +49,45 @@ export const CompanySection = ({
   // Carica i post aziendali da localStorage all'avvio / cambio azienda
   useEffect(() => {
     try {
-      const collected: CompanyPost[] = [];
-
-      const loadFromKey = (key: string | null) => {
-        if (!key) return;
-        const raw = localStorage.getItem(key);
-        if (!raw) return;
-        const parsed = JSON.parse(raw) as Array<CompanyPost & { image?: string }>;
-        const normalized: CompanyPost[] = parsed.map((p) => {
-          if (p.images && p.images.length > 0) return { ...p, images: [...p.images] };
-          if (p.image) {
-            return { id: p.id, text: p.text, images: [p.image], createdAt: p.createdAt };
-          }
-          return { id: p.id, text: p.text, images: [], createdAt: p.createdAt };
-        });
-        collected.push(...normalized);
-      };
-
-      // Prima prova a caricare i post globali, poi quelli specifici per azienda
-      loadFromKey(baseStorageKey);
-      loadFromKey(companyStorageKey);
-
-      if (collected.length === 0) {
+      if (!storageKey) {
         setPosts([]);
         return;
       }
 
-      // Deduplica per id mantenendo l'ordine (prima i più recenti)
-      const seen = new Set<string>();
-      const deduped: CompanyPost[] = [];
-      for (const p of collected) {
-        if (!seen.has(p.id)) {
-          seen.add(p.id);
-          deduped.push(p);
-        }
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) {
+        setPosts([]);
+        return;
       }
 
-      setPosts(deduped);
+      const parsed = JSON.parse(raw) as Array<CompanyPost & { image?: string }>;
+      const normalized: CompanyPost[] = parsed.map((p) => {
+        if (p.images && p.images.length > 0) return { ...p, images: [...p.images] };
+        if (p.image) {
+          return { id: p.id, text: p.text, images: [p.image], createdAt: p.createdAt };
+        }
+        return { id: p.id, text: p.text, images: [], createdAt: p.createdAt };
+      });
+
+      setPosts(normalized);
     } catch {
       setPosts([]);
     }
-  }, [baseStorageKey, companyStorageKey]);
+  }, [storageKey]);
 
   // Salva i post aziendali in localStorage quando cambiano
   useEffect(() => {
     try {
+      if (!storageKey) return;
       if (posts.length > 0) {
-        const serialized = JSON.stringify(posts);
-        // Salva sempre una copia globale
-        localStorage.setItem(baseStorageKey, serialized);
-        // E, se disponibile, una copia specifica per azienda
-        if (companyStorageKey) {
-          localStorage.setItem(companyStorageKey, serialized);
-        }
+        localStorage.setItem(storageKey, JSON.stringify(posts));
       } else {
-        localStorage.removeItem(baseStorageKey);
-        if (companyStorageKey) {
-          localStorage.removeItem(companyStorageKey);
-        }
+        localStorage.removeItem(storageKey);
       }
     } catch {
       // ignore storage errors
     }
-  }, [posts, baseStorageKey, companyStorageKey]);
+  }, [posts, storageKey]);
 
   const handlePostImageChange = (files?: FileList | null) => {
     if (!files || files.length === 0) {

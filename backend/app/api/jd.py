@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 import csv
 
+
 # Cartella condivisa con la pipeline NLP dentro al container backend
 # Montata come volume in docker-compose:
 #   /var/lib/docker/piazzati-data:/app/NLP/data
@@ -221,3 +222,49 @@ async def jd_status(jd_id: str | None = None):
         }
 
     return status
+
+
+@router.get("/jd/matches/{jd_id}")
+async def jd_matches(jd_id: str, top_n: int = 20):
+    """Restituisce i top-N candidati per una JD, calcolati dal motore NLP.
+
+    Legge il file JSON prodotto da NLP/Matching.py (jd_cv_matches.json) e
+    restituisce i candidati già ordinati per rank.
+    """
+
+    base_nlp = Path("/app/NLP")
+    json_path = base_nlp / "match_results" / "jd_cv_matches.json"
+
+    if not json_path.exists():
+        raise HTTPException(status_code=404, detail="Risultati di matching non ancora disponibili")
+
+    try:
+        with json_path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore lettura risultati matching: {e}")
+
+    matches_by_jd = data.get("matches") or {}
+    jd_info = matches_by_jd.get(jd_id)
+
+    if not jd_info:
+        # Nessun risultato per questa JD (magari pipeline non ancora eseguita per questo jd_id)
+        return {
+            "jd_id": jd_id,
+            "title": None,
+            "quality": None,
+            "latency_ms": None,
+            "candidates": [],
+        }
+
+    candidates = jd_info.get("candidates") or []
+    if top_n and top_n > 0:
+        candidates = candidates[:top_n]
+
+    return {
+        "jd_id": jd_id,
+        "title": jd_info.get("title"),
+        "quality": jd_info.get("quality"),
+        "latency_ms": jd_info.get("latency_ms"),
+        "candidates": candidates,
+    }

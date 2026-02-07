@@ -158,6 +158,52 @@ const Index = () => {
     return saved || null;
   });
 
+  // Inbox messaggi per candidato (campanella)
+  type InboxMessage = {
+    id: string;
+    timestamp: string;
+    jd_id: string;
+    message: string;
+    from_company?: string | null;
+    from_name?: string | null;
+  };
+
+  const [inboxMessages, setInboxMessages] = useState<InboxMessage[]>([]);
+  const [inboxOpen, setInboxOpen] = useState(false);
+  const [hasUnreadInbox, setHasUnreadInbox] = useState(false);
+
+  const fetchInbox = async () => {
+    if (!jwtToken || authRole !== "candidate") return;
+    try {
+      const res = await fetch("/api/contact/inbox", {
+        headers: {
+          Authorization: `Bearer ${jwtToken}`,
+        },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setInboxMessages(data as InboxMessage[]);
+        if (!inboxOpen && data.length > 0) {
+          setHasUnreadInbox(true);
+        }
+      }
+    } catch {
+      // silenzioso: la inbox non è critica
+    }
+  };
+
+  useEffect(() => {
+    if (authRole === "candidate" && jwtToken) {
+      fetchInbox();
+    } else {
+      setInboxMessages([]);
+      setInboxOpen(false);
+      setHasUnreadInbox(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authRole, jwtToken]);
+
   // Current candidate sempre sincronizzato
   const currentCandidate = candidates.find(c => c.id === activeCandidateId) || candidates[0];
 
@@ -662,7 +708,54 @@ const Index = () => {
             localStorage.removeItem("piazzati:jwtToken");
             toast({ title: "Logout eseguito", description: "Sei tornato alla pagina di login" });
           }}
+          showInbox={authRole === "candidate"}
+          inboxCount={inboxMessages.length}
+          hasUnreadInbox={hasUnreadInbox}
+          onToggleInbox={async () => {
+            if (!inboxOpen) {
+              await fetchInbox();
+            }
+            setInboxOpen((prev) => !prev);
+            if (!inboxOpen) {
+              setHasUnreadInbox(false);
+            }
+          }}
         />
+      )}
+      {/* Inbox candidato: pannello a discesa dalla campanella */}
+      {authRole === "candidate" && inboxOpen && inboxMessages.length > 0 && (
+        <div className="fixed top-16 right-4 z-40 w-80 max-h-[60vh] overflow-y-auto bg-white/95 shadow-lg rounded-lg border p-3 space-y-3">
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="text-sm font-semibold">Messaggi dalle aziende</h2>
+            <button
+              className="text-xs text-muted-foreground hover:underline"
+              onClick={() => setInboxOpen(false)}
+            >
+              Chiudi
+            </button>
+          </div>
+          {inboxMessages.map((msg) => {
+            const jdTitle = jobDescriptions.find((jd) => jd.jd_id === msg.jd_id)?.title;
+            return (
+              <div key={msg.id} className="border rounded-md px-2 py-2 text-xs bg-muted/60">
+                <div className="flex flex-col mb-1">
+                  <span className="font-semibold text-pink-900">
+                    {msg.from_company || "Azienda"}
+                  </span>
+                  {msg.from_name && (
+                    <span className="text-[11px] text-muted-foreground">Contatto: {msg.from_name}</span>
+                  )}
+                </div>
+                {jdTitle && (
+                  <div className="text-[11px] text-muted-foreground mb-1">
+                    Posizione: {jdTitle}
+                  </div>
+                )}
+                <p className="text-[11px] whitespace-pre-wrap">{msg.message}</p>
+              </div>
+            );
+          })}
+        </div>
       )}
       <main className="container mx-auto px-4 py-8">
         {!authRole ? (
