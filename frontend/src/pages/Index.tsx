@@ -952,6 +952,7 @@ const Index = () => {
                 mode={authRole === "company" ? "company" : "candidate"}
                 onCreateJd={handleCreateJd}
                 companyName={currentUserProfile?.company}
+                companyApplications={companyApplications}
               />
             </TabsContent>
 
