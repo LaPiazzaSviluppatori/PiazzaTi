@@ -87,6 +87,10 @@ export const DiscoverSection = ({
   const [loadingXai, setLoadingXai] = React.useState(false);
   // Stato per score reali calcolati dal backend
   const [realScores, setRealScores] = React.useState<Record<string, number>>({});
+  const [applyDialogOpen, setApplyDialogOpen] = React.useState(false);
+  const [applyJob, setApplyJob] = React.useState<JobDescription | null>(null);
+  const [applyMessage, setApplyMessage] = React.useState("");
+  const [sendingApplication, setSendingApplication] = React.useState(false);
 
   // Estrae lo score numerico dalla risposta del matcher
   const extractScore = (result: unknown): number | null => {
@@ -198,15 +202,30 @@ export const DiscoverSection = ({
       });
       return;
     }
+    const defaultMessage = `Ciao, mi piacerebbe candidarmi per la posizione "${jd.title}". Credo che le mie competenze siano in linea con i requisiti indicati e sarei felice di confrontarmi con voi.`;
+    setApplyJob(jd);
+    setApplyMessage(defaultMessage);
+    setApplyDialogOpen(true);
+  };
 
-    const defaultMessage = `Ciao, vorrei candidarmi per la posizione "${jd.title}".`;
-    const message = window.prompt("Vuoi aggiungere un messaggio alla tua candidatura?", defaultMessage) ?? defaultMessage;
+  const handleConfirmApply = async () => {
+    if (!applyJob || !activeCandidate) return;
+    const message = applyMessage.trim();
+    if (!message) {
+      toast({
+        title: "Messaggio vuoto",
+        description: "Scrivi un breve messaggio di presentazione prima di inviare.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     try {
+      setSendingApplication(true);
       const res = await fetch("/api/contact/apply", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jd_id: jd.jd_id, message }),
+        body: JSON.stringify({ jd_id: applyJob.jd_id, message }),
       });
       if (!res.ok) {
         const text = await res.text();
@@ -216,6 +235,9 @@ export const DiscoverSection = ({
         title: "Candidatura inviata",
         description: "La tua candidatura è stata inviata all'azienda.",
       });
+      setApplyDialogOpen(false);
+      setApplyJob(null);
+      setApplyMessage("");
     } catch (err) {
       console.error("Errore invio candidatura", err);
       toast({
@@ -223,6 +245,8 @@ export const DiscoverSection = ({
         description: "Non è stato possibile inviare la candidatura. Riprova più tardi.",
         variant: "destructive",
       });
+    } finally {
+      setSendingApplication(false);
     }
   };
 
@@ -469,6 +493,62 @@ export const DiscoverSection = ({
           </div>
         </Card>
       )}
+      <Dialog
+        open={applyDialogOpen}
+        onOpenChange={(open) => {
+          setApplyDialogOpen(open);
+          if (!open) {
+            setApplyJob(null);
+            setApplyMessage("");
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Invia candidatura</DialogTitle>
+            <DialogDescription>
+              Scrivi un breve messaggio di presentazione che accompagnerà la tua candidatura.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            {applyJob && (
+              <p className="text-xs text-muted-foreground">
+                Posizione: <span className="font-semibold">{applyJob.title}</span>
+              </p>
+            )}
+            <div className="space-y-2">
+              <Label htmlFor="apply-message">Messaggio</Label>
+              <Textarea
+                id="apply-message"
+                rows={5}
+                value={applyMessage}
+                onChange={(e) => setApplyMessage(e.target.value)}
+                placeholder="Presentati brevemente, evidenzia le competenze più rilevanti per questa posizione e proponi un eventuale prossimo passo (es. call)."
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 mt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setApplyDialogOpen(false);
+                setApplyJob(null);
+                setApplyMessage("");
+              }}
+            >
+              Annulla
+            </Button>
+            <Button
+              type="button"
+              onClick={handleConfirmApply}
+              disabled={sendingApplication}
+            >
+              {sendingApplication ? "Invio..." : "Invia candidatura"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

@@ -4,7 +4,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { FileText } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
@@ -156,6 +163,14 @@ const GestisciCandidature: React.FC<GestisciCandidatureProps> = ({ onCreateJd, j
   const [xaiLoadingKey, setXaiLoadingKey] = useState<string | null>(null);
   const [xaiError, setXaiError] = useState<string | null>(null);
 
+  const [contactDialogOpen, setContactDialogOpen] = useState(false);
+  const [contactDraft, setContactDraft] = useState("");
+  const [contactTarget, setContactTarget] = useState<{
+    candidate: JDMatchCandidate;
+    jdId: string;
+    jdTitle: string;
+  } | null>(null);
+
   const handleShowMatches = async (jdId: string) => {
     setMatchJdId(jdId);
     setMatchLoading(true);
@@ -241,18 +256,32 @@ const GestisciCandidature: React.FC<GestisciCandidatureProps> = ({ onCreateJd, j
     }
   };
 
-  const handleContactCandidate = async (candidate: JDMatchCandidate, jdId: string, jdTitle: string) => {
-    const defaultMessage = `Ciao, ti contatto per la posizione "${jdTitle}".`;
-    const message = window.prompt("Messaggio da inviare al candidato:", defaultMessage);
-    if (!message || !message.trim()) return;
+  const handleContactCandidate = (candidate: JDMatchCandidate, jdId: string, jdTitle: string) => {
+    const defaultMessage = `Ciao, stiamo valutando il tuo profilo per la posizione "${jdTitle}". Se ti va, possiamo fissare una breve call per conoscerci meglio e raccontarti il ruolo.`;
+    setContactTarget({ candidate, jdId, jdTitle });
+    setContactDraft(defaultMessage);
+    setContactDialogOpen(true);
+  };
+
+  const handleSendContact = async () => {
+    if (!contactTarget) return;
+    const message = contactDraft.trim();
+    if (!message) {
+      toast({
+        title: "Messaggio vuoto",
+        description: "Scrivi un breve messaggio prima di inviare.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     try {
       const res = await fetch("/api/contact/candidate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          jd_id: jdId,
-          candidate_id: candidate.user_id,
+          jd_id: contactTarget.jdId,
+          candidate_id: contactTarget.candidate.user_id,
           message,
         }),
       });
@@ -264,8 +293,11 @@ const GestisciCandidature: React.FC<GestisciCandidatureProps> = ({ onCreateJd, j
 
       toast({
         title: "Messaggio inviato",
-        description: "Il candidato riceverà il tuo messaggio.",
+        description: "Il candidato riceverà il tuo messaggio nella sua inbox.",
       });
+      setContactDialogOpen(false);
+      setContactTarget(null);
+      setContactDraft("");
     } catch (err) {
       console.error("Errore invio messaggio al candidato", err);
       toast({
@@ -561,6 +593,55 @@ const GestisciCandidature: React.FC<GestisciCandidatureProps> = ({ onCreateJd, j
         )}
       </div>
     </Card>
+    <Dialog open={contactDialogOpen} onOpenChange={(open) => {
+      setContactDialogOpen(open);
+      if (!open) {
+        setContactTarget(null);
+        setContactDraft("");
+      }
+    }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Invia un messaggio al candidato</DialogTitle>
+          <DialogDescription>
+            Scrivi un messaggio personalizzato. Sarà visibile al candidato nella sezione "Feedback ricevuti".
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 py-2">
+          {contactTarget && (
+            <p className="text-xs text-muted-foreground">
+              Posizione: <span className="font-semibold">{contactTarget.jdTitle}</span>
+            </p>
+          )}
+          <div className="space-y-2">
+            <Label htmlFor="contact-message">Messaggio</Label>
+            <Textarea
+              id="contact-message"
+              rows={5}
+              value={contactDraft}
+              onChange={(e) => setContactDraft(e.target.value)}
+              placeholder="Presentati brevemente, spiega perché il profilo ti interessa e proponi i prossimi passi (es. call conoscitiva)."
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setContactDialogOpen(false);
+              setContactTarget(null);
+              setContactDraft("");
+            }}
+          >
+            Annulla
+          </Button>
+          <Button type="button" onClick={handleSendContact}>
+            Invia messaggio
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 };
 

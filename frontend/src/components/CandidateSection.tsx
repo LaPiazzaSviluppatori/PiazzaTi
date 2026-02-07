@@ -141,10 +141,7 @@ export const CandidateSection = ({
       optInTags: prev.optInTags.filter(t => !(t.label === label && t.category === category)),
     }));
   };
-  
-  // CV from text modal
-  const [cvModalOpen, setCvModalOpen] = useState(false);
-  const [cvText, setCvText] = useState("");
+
   // CV file upload
   const [cvFile, setCvFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -165,31 +162,42 @@ export const CandidateSection = ({
   // Candidate Login Modal state
   
           
-  const selectedJd = jobDescriptions.find((jd) => jd.jd_id === selectedJdId);
-
-  // Mock compatibility calculation
-  const calculateCompatibility = () => {
-    if (!selectedJd) return null;
-    // Tutti i requirements sono must-have
-    const mustRequirements = selectedJd.requirements;
-    const candidateSkillNames = (candidateData.skills || []).map((s) => s.name.toLowerCase());
-    const mustMatch = mustRequirements.filter((req) =>
-      candidateSkillNames.some((skill) => skill.includes(req.toLowerCase()))
-    ).length;
-    const mustPercentage = mustRequirements.length > 0 ? (mustMatch / mustRequirements.length) * 100 : 0;
-    return {
-      score: Math.round(mustPercentage),
-      mustMatch,
-      mustTotal: mustRequirements.length,
-      mustPercentage: Math.round(mustPercentage),
-    };
+  // Messaggi reali ricevuti dalle aziende (inbox)
+  type InboxMessage = {
+    id: string;
+    timestamp: string;
+    jd_id: string;
+    message: string;
+    from_company?: string | null;
+    from_name?: string | null;
   };
 
-  // Stato per lo score reale dal matcher
-  const [realCompatibility, setRealCompatibility] = useState<number|null>(null);
-  const compatibility = realCompatibility !== null
-    ? { score: realCompatibility, mustMatch: 0, mustTotal: 0, mustPercentage: realCompatibility }
-    : calculateCompatibility();
+  const [inboxMessages, setInboxMessages] = useState<InboxMessage[]>([]);
+  const [loadingInbox, setLoadingInbox] = useState(false);
+  const [inboxError, setInboxError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user_id) return;
+    const loadInbox = async () => {
+      setLoadingInbox(true);
+      setInboxError(null);
+      try {
+        const res = await fetch("/api/contact/inbox");
+        if (!res.ok) {
+          const text = await res.text().catch(() => "");
+          throw new Error(text || "Errore dal server");
+        }
+        const data = (await res.json()) as InboxMessage[];
+        setInboxMessages(data);
+      } catch (err) {
+        console.error("Errore caricamento inbox candidato", err);
+        setInboxError("Non è stato possibile caricare i messaggi dalle aziende.");
+      } finally {
+        setLoadingInbox(false);
+      }
+    };
+    loadInbox();
+  }, [user_id]);
 
   const handleAddSkill = async () => {
     const skillName = newSkill.trim();
@@ -297,82 +305,6 @@ export const CandidateSection = ({
     setNewTagLabel("");
     setTagModalOpen(false);
     toast({ title: "Tag aggiunto", description: `Tag "${newTag.label}" aggiunto al profilo` });
-  };
-
-  const handleCreateFromText = () => {
-    if (!cvText.trim()) {
-      toast({ title: "Testo richiesto", description: "Inserisci il testo del CV", variant: "destructive" });
-      return;
-    }
-
-    // Simple parser (demo)
-    const skills = cvText.match(/\b(React|TypeScript|Python|Node\.js|Java|AWS|Docker|Kubernetes|SQL|PostgreSQL|MongoDB)\b/gi) || [];
-    
-    toast({ 
-      title: "CV parsato", 
-      description: `Trovate ${skills.length} skill. In una versione reale, verrebbe creato un nuovo candidato.`,
-    });
-    
-    setCvText("");
-    setCvModalOpen(false);
-  };
-
-  const handleSubmitApplication = async () => {
-    if (!selectedJdId) {
-      toast({ title: "Seleziona una JD", description: "Seleziona una posizione prima di candidarti", variant: "destructive" });
-      return;
-    }
-    if (!user_id) {
-      toast({
-        title: "ID utente mancante",
-        description: "Effettua il login e carica un CV prima di lanciare il matching.",
-        variant: "destructive",
-      });
-      return;
-    }
-    try {
-      const response = await fetch("/api/match_cv_jd", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          cv_path: user_id,
-          jd_path: selectedJdId
-        })
-      });
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => "");
-        console.error("Errore matcher (submit)", errorText);
-        toast({
-          title: "Errore matcher",
-          description: "Si è verificato un problema durante il matching.",
-          variant: "destructive",
-        });
-        return;
-      }
-      const data = await response.json();
-      const rawScore =
-        typeof data?.candidate?.score === "number"
-          ? data.candidate.score
-          : typeof data?.quality_assessment?.final_score === "number"
-          ? data.quality_assessment.final_score
-          : typeof data?.score === "number"
-          ? data.score
-          : null;
-
-      if (rawScore !== null) {
-        const pct = Math.round(rawScore * 100);
-        setRealCompatibility(pct);
-      } else {
-        // Nessun toast di successo: aggiorniamo solo la UI se possibile
-      }
-    } catch (err) {
-      console.error("Errore di rete matcher (submit)", err);
-      toast({
-        title: "Errore di rete",
-        description: "Si è verificato un problema di connessione durante il matching.",
-        variant: "destructive",
-      });
-    }
   };
 
   return (
@@ -707,97 +639,49 @@ export const CandidateSection = ({
             </div>
           )}
         </Card>
-        {/* Aggiungi CV da testo (modal) */}
-        <Card className="p-6">
-          <h3 className="text-lg font-semibold flex items-center gap-2 mb-4">
-            <Upload className="h-5 w-5 text-primary" />
-            Aggiungi CV da testo
-          </h3>
-          <Button variant="outline" className="w-full" onClick={() => setCvModalOpen(true)}>
-            <Upload className="h-4 w-4 mr-2" />
-            Carica testo CV
-          </Button>
-        </Card>
 
-        {/* JD Selector & Compatibility */}
+        {/* Feedback ricevuti dalle aziende */}
         <Card className="p-6">
-          <h3 className="text-lg font-semibold mb-4">Job Description</h3>
-          <div className="space-y-4">
-            <div>
-              <Label>Seleziona JD</Label>
-              <Select value={selectedJdId || ""} onValueChange={onSelectJd}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Scegli una posizione..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {jobDescriptions.map((jd) => (
-                    <SelectItem key={jd.jd_id} value={jd.jd_id}>
-                      {jd.title}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {compatibility && (
-              <div className="space-y-3 mt-4 p-4 rounded-lg bg-muted">
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold">Compatibilità</span>
-                  <span className="text-2xl font-bold text-primary">{compatibility.score}%</span>
-                </div>
-                <div className="space-y-2 text-sm">
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-muted-foreground">Must-have</span>
-                      <span className="font-medium">
-                        {compatibility.mustMatch}/{compatibility.mustTotal} ({compatibility.mustPercentage}%)
-                      </span>
-                    </div>
-                    <div className="h-2 rounded-full bg-background">
-                      <div
-                        className="h-full rounded-full bg-primary transition-all"
-                        style={{ width: `${compatibility.mustPercentage}%` }}
-                      />
-                    </div>
-                  </div>
-                </div>
-                <p className="text-xs text-muted-foreground mt-2">
-                  Score calcolato: solo must-have
-                </p>
-                <Button onClick={handleSubmitApplication} className="w-full mt-4">
-                  <Send className="h-4 w-4 mr-2" />
-                  Invia candidatura (demo)
-                </Button>
-              </div>
-            )}
-          </div>
-        </Card>
-
-        {/* Feedback ricevuti */}
-        <Card className="p-6">
-          <h3 className="text-lg font-semibold mb-4">Feedback Ricevuti</h3>
+          <h3 className="text-lg font-semibold mb-4">Feedback ricevuti dalle aziende</h3>
           <div className="space-y-3">
-            {feedback.map((fb) => (
-              <div key={fb.id} className="rounded-lg border p-3 text-sm">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-semibold">{fb.from}</span>
-                  <Badge
-                    variant={fb.type === "positive" ? "default" : "outline"}
-                    className={
-                      fb.type === "positive"
-                        ? "bg-success text-success-foreground"
-                        : fb.type === "constructive"
-                        ? "border-warning text-warning"
-                        : ""
-                    }
-                  >
-                    {fb.type}
-                  </Badge>
+            {!user_id && (
+              <p className="text-xs text-muted-foreground">
+                Accedi e carica il tuo CV per ricevere e visualizzare i feedback personalizzati dalle aziende.
+              </p>
+            )}
+            {user_id && loadingInbox && (
+              <p className="text-xs text-muted-foreground">Caricamento feedback in corso...</p>
+            )}
+            {user_id && inboxError && (
+              <p className="text-xs text-destructive">{inboxError}</p>
+            )}
+            {user_id && !loadingInbox && !inboxError && inboxMessages.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                Al momento non hai ancora ricevuto messaggi dalle aziende. Quando un recruiter ti contatterà, troverai qui il suo feedback.
+              </p>
+            )}
+            {user_id && !loadingInbox && !inboxError &&
+              inboxMessages.map((msg) => (
+                <div key={msg.id} className="rounded-lg border p-3 text-sm">
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex flex-col">
+                      <span className="font-semibold">
+                        {msg.from_company || "Azienda"}
+                      </span>
+                      {msg.from_name && (
+                        <span className="text-[11px] text-muted-foreground">{msg.from_name}</span>
+                      )}
+                    </div>
+                    <span className="text-[11px] text-muted-foreground">
+                      {new Date(msg.timestamp).toLocaleString()}
+                    </span>
+                  </div>
+                  <p className="text-muted-foreground text-xs mb-1">{msg.message}</p>
+                  <span className="text-[11px] text-muted-foreground">
+                    Riferimento JD: {msg.jd_id}
+                  </span>
                 </div>
-                <p className="text-muted-foreground text-xs mb-1">{fb.message}</p>
-                <span className="text-xs text-muted-foreground">{fb.date}</span>
-              </div>
-            ))}
+              ))}
           </div>
         </Card>
 
