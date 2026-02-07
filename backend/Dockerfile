@@ -36,9 +36,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
-# Fix permessi directory usata dal backend e per embeddings NLP
+# Fix permessi directory usata dal backend e per pipeline NLP
 RUN mkdir -p /opt/piazzati && chmod -R 777 /opt/piazzati \
-    && mkdir -p /app/NLP/embeddings && chmod -R 777 /app/NLP/embeddings
+    && mkdir -p /app/NLP/embeddings && chmod -R 777 /app/NLP/embeddings \
+    && mkdir -p /app/NLP/Dataset /app/NLP/Dataset/normalized && chmod -R 777 /app/NLP/Dataset
 
 # Imposta directory di lavoro
 WORKDIR /app
