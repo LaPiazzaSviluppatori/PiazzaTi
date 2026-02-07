@@ -817,38 +817,6 @@ export const CandidateSection = ({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-
-      {/* CV from Text Modal */}
-      <Dialog open={cvModalOpen} onOpenChange={setCvModalOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Crea CV da Testo</DialogTitle>
-            <DialogDescription>
-              Incolla il testo del CV. Un parser dummy estrarrà nome, summary e skill (demo).
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="cv-text">Testo CV</Label>
-              <Textarea
-                id="cv-text"
-                value={cvText}
-                onChange={(e) => setCvText(e.target.value)}
-                placeholder="Incolla qui il testo del CV..."
-                rows={8}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCvModalOpen(false)}>Annulla</Button>
-            <Button onClick={handleCreateFromText}>
-              <Upload className="h-4 w-4 mr-2" />
-              Crea da Testo
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 };
