@@ -24,6 +24,22 @@ from datetime import datetime
 from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
+import logging
+
+# Setup logging for single_match
+BASE_PATH = Path(__file__).parent.resolve()
+LOG_DIR = BASE_PATH / "match_results" / "logs"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+LOG_FILE = LOG_DIR / "single_match.log"
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(str(LOG_FILE)),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 warnings.filterwarnings('ignore')
 
@@ -161,17 +177,23 @@ def load_all_data(config: Config) -> dict:
     """Carica tutti i dati necessari: embeddings + dataset"""
     cv_emb_path = config.EMBEDDINGS_DIR / config.CV_EMBEDDINGS_FILE
     jd_emb_path = config.EMBEDDINGS_DIR / config.JD_EMBEDDINGS_FILE
+    try:
+        logger.info(f"Loading embeddings from {cv_emb_path} and {jd_emb_path}")
+        cv_emb_df, cv_embeddings = load_embeddings(cv_emb_path)
+        jd_emb_df, jd_embeddings = load_embeddings(jd_emb_path)
 
-    cv_emb_df, cv_embeddings = load_embeddings(cv_emb_path)
-    jd_emb_df, jd_embeddings = load_embeddings(jd_emb_path)
+        cv_data, jd_data = load_normalized_datasets(config)
 
-    cv_data, jd_data = load_normalized_datasets(config)
+        logger.info(f"Loaded {len(cv_emb_df)} CV embeddings and {len(jd_emb_df)} JD embeddings")
 
-    return {
-        'cv_emb_df': cv_emb_df, 'cv_embeddings': cv_embeddings,
-        'jd_emb_df': jd_emb_df, 'jd_embeddings': jd_embeddings,
-        'cv_data': cv_data, 'jd_data': jd_data
-    }
+        return {
+            'cv_emb_df': cv_emb_df, 'cv_embeddings': cv_embeddings,
+            'jd_emb_df': jd_emb_df, 'jd_embeddings': jd_embeddings,
+            'cv_data': cv_data, 'jd_data': jd_data
+        }
+    except Exception as e:
+        logger.exception(f"Errore caricamento dati in load_all_data: {e}")
+        raise
 
 
 def cosine_similarity(vec1: np.ndarray, vec2: np.ndarray) -> float:
@@ -855,6 +877,7 @@ def validate_inputs(user_id: str, jd_id: str, data: dict) -> Tuple[bool, Optiona
             hint = f"Esempi presenti: {sample}."
         if suggestions:
             hint = (hint + ' Suggerimenti simili: ' + str(suggestions)) if hint else ('Suggerimenti simili: ' + str(suggestions))
+        logger.warning(f"USER_ID '{user_id}' non trovato nelle sorgenti: suggerimenti: {suggestions[:3] if suggestions else []}")
         return False, f"USER_ID '{user_id}' non trovato nel dataset CV. {hint}"
 
     # Check jd_id presence
@@ -866,6 +889,7 @@ def validate_inputs(user_id: str, jd_id: str, data: dict) -> Tuple[bool, Optiona
             hint = f"Esempi presenti: {sample}."
         if suggestions:
             hint = (hint + ' Suggerimenti simili: ' + str(suggestions)) if hint else ('Suggerimenti simili: ' + str(suggestions))
+        logger.warning(f"JD_ID '{jd_id}' non trovato nelle sorgenti: suggerimenti: {suggestions[:3] if suggestions else []}")
         return False, f"JD_ID '{jd_id}' non trovato nel dataset JD. {hint}"
 
     return True, None
@@ -895,14 +919,17 @@ def compare_cv_with_jd(user_id: str, jd_id: str,
     
     if data is None:
         data = load_all_data(config)
+    logger.info(f"compare_cv_with_jd called for user_id={user_id}, jd_id={jd_id}")
     
     is_valid, error_msg = validate_inputs(user_id, jd_id, data)
     if not is_valid:
+        logger.error(f"Validation failed: {error_msg}")
         raise ValueError(error_msg)
     
     cv_emb = data['cv_embeddings'][user_id]
     jd_emb = data['jd_embeddings'][jd_id]
     cosine = cosine_similarity(cv_emb, jd_emb)
+    logger.info(f"Cosine similarity for user {user_id} vs jd {jd_id}: {cosine:.4f}")
     
     features = compute_features(user_id, jd_id, cosine, 
                                data['cv_data'], data['jd_data'], config)
@@ -910,6 +937,7 @@ def compare_cv_with_jd(user_id: str, jd_id: str,
     score = compute_score(features, config)
     
     output = build_json(user_id, jd_id, features, score, data['jd_data'], config)
+    logger.info(f"Match computed: user={user_id}, jd={jd_id}, score={output['candidate']['score']}")
     
     return output
 

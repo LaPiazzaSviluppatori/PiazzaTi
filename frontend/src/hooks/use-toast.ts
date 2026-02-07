@@ -135,6 +135,14 @@ function dispatch(action: Action) {
 type Toast = Omit<ToasterToast, "id">;
 
 function toast({ ...props }: Toast) {
+  // Blocca in modo centralizzato il vecchio toast "Match valutato"
+  if (props.title === "Match valutato") {
+    const id = genId();
+    const update = (_props: ToasterToast) => {};
+    const dismiss = () => {};
+    return { id, dismiss, update };
+  }
+
   const id = genId();
 
   const update = (props: ToasterToast) =>

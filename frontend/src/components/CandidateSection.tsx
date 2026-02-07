@@ -191,7 +191,7 @@ export const CandidateSection = ({
     ? { score: realCompatibility, mustMatch: 0, mustTotal: 0, mustPercentage: realCompatibility }
     : calculateCompatibility();
 
-  const handleAddSkill = () => {
+  const handleAddSkill = async () => {
     const skillName = newSkill.trim();
     if (!skillName) return;
     // Check if skill already exists (case-insensitive)
@@ -211,6 +211,33 @@ export const CandidateSection = ({
     onAddSkill(skillName);
     setNewSkill("");
     toast({ title: "Skill aggiunta", description: `"${skillName}" aggiunta al profilo` });
+
+    // Se abbiamo uno user_id backend, aggiorna anche il JSON del CV e gli embeddings
+    if (user_id) {
+      try {
+        const resp = await fetch(`/api/parse/user/${user_id}/skills/append`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ skills: [skillName] }),
+        });
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({}));
+          console.error("Errore aggiornamento skills/embeddings", err);
+          toast({
+            title: "Errore aggiornamento profilo",
+            description: err.detail || resp.statusText,
+            variant: "destructive",
+          });
+        }
+      } catch (e) {
+        console.error("Errore rete aggiornamento skills/embeddings", e);
+        toast({
+          title: "Errore di rete",
+          description: String(e),
+          variant: "destructive",
+        });
+      }
+    }
   };
 
   const handleAddPost = () => {
@@ -295,6 +322,14 @@ export const CandidateSection = ({
       toast({ title: "Seleziona una JD", description: "Seleziona una posizione prima di candidarti", variant: "destructive" });
       return;
     }
+    if (!user_id) {
+      toast({
+        title: "ID utente mancante",
+        description: "Effettua il login e carica un CV prima di lanciare il matching.",
+        variant: "destructive",
+      });
+      return;
+    }
     try {
       const response = await fetch("/api/match_cv_jd", {
         method: "POST",
@@ -305,20 +340,38 @@ export const CandidateSection = ({
         })
       });
       if (!response.ok) {
-        const error = await response.json();
-        toast({ title: "Errore matcher", description: error.detail || "Errore durante il matching", variant: "destructive" });
+        const errorText = await response.text().catch(() => "");
+        console.error("Errore matcher (submit)", errorText);
+        toast({
+          title: "Errore matcher",
+          description: "Si è verificato un problema durante il matching.",
+          variant: "destructive",
+        });
         return;
       }
       const data = await response.json();
-      if (typeof data.score === "number") {
-        setRealCompatibility(Math.round((data.score ?? 0) * 100));
+      const rawScore =
+        typeof data?.candidate?.score === "number"
+          ? data.candidate.score
+          : typeof data?.quality_assessment?.final_score === "number"
+          ? data.quality_assessment.final_score
+          : typeof data?.score === "number"
+          ? data.score
+          : null;
+
+      if (rawScore !== null) {
+        const pct = Math.round(rawScore * 100);
+        setRealCompatibility(pct);
+      } else {
+        // Nessun toast di successo: aggiorniamo solo la UI se possibile
       }
-      toast({
-        title: "Compatibilità calcolata!",
-        description: `Score: ${Math.round(((data.score ?? 0) * 100))}%`,
-      });
     } catch (err) {
-      toast({ title: "Errore di rete", description: String(err), variant: "destructive" });
+      console.error("Errore di rete matcher (submit)", err);
+      toast({
+        title: "Errore di rete",
+        description: "Si è verificato un problema di connessione durante il matching.",
+        variant: "destructive",
+      });
     }
   };
 

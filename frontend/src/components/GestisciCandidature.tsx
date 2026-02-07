@@ -259,3 +259,6 @@ const GestisciCandidature: React.FC<GestisciCandidatureProps> = ({ onCreateJd })
 };
 
 export default GestisciCandidature;
+
+
+//aggiunta delle candidature 

@@ -53,6 +53,8 @@ export const CompanyProfileHeader: React.FC<CompanyProfileHeaderProps> = ({ isCo
         </div>
       </div>
     </Card>
+
+    //i post pubblucati dall'azienda saranno visibili qui, con la possibilità di modificarli o eliminarli.
   );
 };
 

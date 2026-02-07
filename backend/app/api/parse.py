@@ -10,6 +10,7 @@ from pathlib import Path
 from ..parsers.ollama_cv_parser import OllamaCVParser
 from ..utils.parsing_display import display_parsing_results
 from ..services.cv_batch_storage import get_batch_storage
+from ..schemas.parsed_document import ParsedDocument, Skill as ParsedSkill, SkillSource
 from fastapi import (
     APIRouter,
     BackgroundTasks,
@@ -18,19 +19,27 @@ from fastapi import (
     HTTPException,
     UploadFile,
 )
-import json
-import importlib.util
+from fastapi import Depends
 from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
 from datetime import datetime
+from pydantic import BaseModel
+import json
+import importlib.util
 import subprocess
 import sys
 import logging
-from fastapi import Depends, APIRouter, File, UploadFile, Form, HTTPException
+
 router = APIRouter(prefix="/parse", tags=["parse"])
 
 # Module logger
 logger = logging.getLogger(__name__)
+
+
+class SkillUpdateRequest(BaseModel):
+    """Payload per aggiornare/aggiungere skill al CV parsato di uno user."""
+
+    skills: list[str]
 
 
 def _save_parsed_cv_to_db(db: Session, user_id: str, doc_parsed) -> Document:
@@ -155,6 +164,75 @@ def get_latest_cv(user_id: str, db: Session = Depends(get_db)):
         "updated_at": doc.updated_at,
         "parsed_json": doc.parsed_json,
         "status": doc.status,
+    }
+
+
+@router.post("/user/{user_id}/skills/append")
+def append_user_skills(
+    user_id: str,
+    payload: SkillUpdateRequest,
+    db: Session = Depends(get_db),
+    background_tasks: BackgroundTasks | None = None,
+):
+    """Aggiunge nuove skill al CV parsato dell'utente e rilancia la pipeline embeddings.
+
+    - Recupera l'ultimo Document di tipo 'cv' per lo user_id
+    - Converte parsed_json in ParsedDocument
+    - Aggiunge le skill mancanti (case-insensitive)
+    - Salva un nuovo Document is_latest nel DB
+    - Salva il JSON aggiornato su filesystem per il batch NLP
+    - Avvia il batch processor per rigenerare embeddings
+    """
+
+    if not payload.skills:
+        raise HTTPException(status_code=400, detail="Nessuna skill fornita")
+
+    doc = db.query(Document).filter_by(user_id=user_id, type="cv", is_latest=True).first()
+    if not doc or not doc.parsed_json:
+        raise HTTPException(status_code=404, detail="Nessun CV caricato per questo utente")
+    try:
+        parsed_doc = ParsedDocument(**doc.parsed_json)
+    except Exception as e:  # pragma: no cover - errore raro di deserializzazione
+        raise HTTPException(status_code=500, detail=f"Impossibile ricostruire ParsedDocument: {e}")
+
+    existing_names = {s.name.lower() for s in parsed_doc.skills if s.name}
+    added: list[str] = []
+
+    for raw_name in payload.skills:
+        name = (raw_name or "").strip()
+        if not name:
+            continue
+        lower = name.lower()
+        if lower in existing_names:
+            continue
+        parsed_doc.skills.append(ParsedSkill(name=name, source=SkillSource.heuristic, confidence=0.9))
+        existing_names.add(lower)
+        added.append(name)
+
+    if not added:
+        return {"message": "Nessuna nuova skill aggiunta (già presenti)", "document_id": str(doc.id)}
+
+    # Salva un nuovo Document come ultimo CV per l'utente
+    new_doc = _save_parsed_cv_to_db(db, user_id, parsed_doc)
+
+    # Salva anche il JSON aggiornato nella cartella batch NLP
+    batch_storage = get_batch_storage()
+    json_path = batch_storage.save_parsed_cv(parsed_doc, getattr(parsed_doc, "file_name", None))
+
+    # Avvia pipeline batch (embeddings) per la data odierna
+    try:
+        if background_tasks is not None:
+            process_date = datetime.now().strftime("%Y-%m-%d")
+            logger.info("Scheduling batch process for date %s (skills append)", process_date)
+            background_tasks.add_task(_start_batch_process, process_date)
+    except Exception as e:  # pragma: no cover - errore non critico
+        logger.exception("Impossibile schedulare batch automatico dopo append skill: %s", str(e))
+
+    return {
+        "message": "Skill aggiornate e pipeline embeddings avviata",
+        "document_id": str(new_doc.id) if new_doc else str(doc.id),
+        "added_skills": added,
+        "json_path": json_path,
     }
 
 

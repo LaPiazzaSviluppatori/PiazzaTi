@@ -15,17 +15,11 @@ from dateutil import parser
 from collections import defaultdict
 import logging
 
-# Logging
-LOG_DIR = OUTPUT_DIR / "logs"
-LOG_DIR.mkdir(parents=True, exist_ok=True)
-LOG_FILE = LOG_DIR / "normalizzatore.log"
+# Basic console logging (file handler configured after OUTPUT_DIR is known)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(str(LOG_FILE)),
-        logging.StreamHandler()
-    ]
+    handlers=[logging.StreamHandler()]
 )
 logger = logging.getLogger(__name__)
 
@@ -41,6 +35,21 @@ ONTOLOGY_FILE = DATASET_DIR / "skill_ontology.json"
 OUTPUT_DIR = DATASET_DIR / "normalized"
 OUTPUT_CV = OUTPUT_DIR / "cv_dataset_normalized.csv"
 OUTPUT_JD = OUTPUT_DIR / "jd_dataset_normalized.csv"
+
+# Configure file logging now that OUTPUT_DIR is defined
+try:
+    LOG_DIR = OUTPUT_DIR / "logs"
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    LOG_FILE = LOG_DIR / "normalizzatore.log"
+    # add file handler while keeping existing stream handlers
+    fh = logging.FileHandler(str(LOG_FILE))
+    fh.setLevel(logging.INFO)
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    fh.setFormatter(formatter)
+    logger.addHandler(fh)
+    logger.info(f"Logging initialized. Log file: {LOG_FILE}")
+except Exception:
+    logger.exception("Impossibile inizializzare il file di log")
 
 # ============================================================================
 # CARICAMENTO ONTOLOGIA
