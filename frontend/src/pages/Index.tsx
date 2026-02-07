@@ -790,6 +790,7 @@ const Index = () => {
                 deiMode={deiMode}
                 isParsing={isParsing}
                 mode={authRole === "company" ? "company" : "candidate"}
+                onCreateJd={handleCreateJd}
               />
             </TabsContent>
 
