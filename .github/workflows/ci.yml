@@ -286,11 +286,11 @@ jobs:
             echo "[remote] Checking service status"
             docker compose -f docker-compose.yml -f docker-compose.deploy.yml ps
 
-            # health check
+            # health check (backend directly)
             max_wait=60
             interval=3
             waited=0
-              until curl -sS --fail --max-time 10 http://localhost/health >/dev/null; do
+              until curl -sS --fail --max-time 10 http://localhost:8000/health >/dev/null; do
               if [ "$waited" -ge "$max_wait" ]; then
                 echo "[remote] Health check failed after $max_wait s" >&2
                 docker compose logs --no-color piazzati-backend --tail 200 || true

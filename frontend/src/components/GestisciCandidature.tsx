@@ -552,28 +552,51 @@ const GestisciCandidature: React.FC<GestisciCandidatureProps> = ({ onCreateJd, j
                                 }
                                 if (xai) {
                                   const reasons = xai.top_reasons || [];
+                                  const risks = xai.main_risks || [];
+                                  const quality = xai.quality_label;
                                   return (
-                                    <div className="text-[11px] text-muted-foreground">
+                                    <div className="text-[11px] text-muted-foreground space-y-1">
                                       <p className="font-semibold">
-                                        Perché pensiamo possa essere un buon candidato:
+                                        Perché pensiamo possa essere un buon candidato
+                                        {quality ? ` (qualità complessiva: ${quality})` : ":"}
                                       </p>
                                       {reasons.length > 0 ? (
-                                        <ul className="list-disc ml-4 mt-1 space-y-0.5">
-                                          {reasons.slice(0, 2).map((r, idx) => (
-                                            <li key={idx}>
-                                              <span>{r.text || ""}</span>
-                                              {r.evidence && (
-                                                <span className="ml-1 text-muted-foreground">
-                                                  ({r.evidence})
-                                                </span>
-                                              )}
-                                            </li>
-                                          ))}
-                                        </ul>
+                                        <div>
+                                          <p className="font-semibold mt-0.5">Punti di forza principali</p>
+                                          <ul className="list-disc ml-4 mt-1 space-y-0.5">
+                                            {reasons.slice(0, 4).map((r, idx) => (
+                                              <li key={idx}>
+                                                <span>{r.text || ""}</span>
+                                                {r.evidence && (
+                                                  <span className="ml-1 text-muted-foreground">
+                                                    ({r.evidence})
+                                                  </span>
+                                                )}
+                                              </li>
+                                            ))}
+                                          </ul>
+                                        </div>
                                       ) : (
-                                        <p className="text-[11px] text-muted-foreground">
+                                        <p>
                                           Nessuna spiegazione dettagliata disponibile, ma il modello considera alto il match.
                                         </p>
+                                      )}
+                                      {risks.length > 0 && (
+                                        <div className="mt-1">
+                                          <p className="font-semibold">Possibili rischi / punti di attenzione</p>
+                                          <ul className="list-disc ml-4 mt-1 space-y-0.5">
+                                            {risks.slice(0, 3).map((r, idx) => (
+                                              <li key={idx}>
+                                                <span>{r.text || ""}</span>
+                                                {r.evidence && (
+                                                  <span className="ml-1 text-muted-foreground">
+                                                    ({r.evidence})
+                                                  </span>
+                                                )}
+                                              </li>
+                                            ))}
+                                          </ul>
+                                        </div>
                                       )}
                                     </div>
                                   );
