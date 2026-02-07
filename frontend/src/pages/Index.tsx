@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, type CSSProperties } from "react";
 import RegisterForm from "@/components/RegisterForm";
 // import LandingPage from "./LandingPage";
 import Header from "@/components/Header";
@@ -63,6 +63,22 @@ const Index = () => {
   const [jwtToken, setJwtToken] = useState<string | null>(() => localStorage.getItem("piazzati:jwtToken"));
   const [showRegister, setShowRegister] = useState(false);
   const [registerRole, setRegisterRole] = useState<"candidate" | "company">("candidate");
+  const [currentUserProfile, setCurrentUserProfile] = useState<{ id: string; email: string; name?: string; role: string; company?: string | null } | null>(null);
+
+  // Tema colori: rosa per candidato, blu per azienda
+  // Anche nella schermata di login usiamo selectedRole per decidere il colore
+  const isCompanyTheme = authRole === "company" || (!authRole && selectedRole === "company");
+
+  const rootStyle = {
+    background:
+      authRole === "company"
+        ? "url('/company_wallpaper.jpg') center center / cover no-repeat fixed"
+        : authRole === "candidate"
+        ? "url('/candidate_wallpaper.jpg') center center / cover no-repeat fixed"
+        : "url('/grey_wallpaper.jpg') center center / cover no-repeat fixed",
+    "--primary": isCompanyTheme ? "220 83% 56%" : "330 100% 35%",
+    "--primary-foreground": "0 0% 100%",
+  } as CSSProperties;
 
   // Funzione di registrazione collegata al RegisterForm
   type CandidateRegisterData = {
@@ -593,6 +609,19 @@ const Index = () => {
       setJwtToken(data.access_token);
       setAuthRole(selectedRole);
 
+      // Recupera profilo utente corrente (incluso company per aziende)
+      try {
+        const meRes = await fetch("/auth/me", {
+          headers: { Authorization: `Bearer ${data.access_token}` },
+        });
+        if (meRes.ok) {
+          const me = await meRes.json();
+          setCurrentUserProfile(me);
+        }
+      } catch {
+        // profilo non essenziale, ignora errori
+      }
+
       // Estrai user_id dal JWT e imposta come candidato attivo
       let userIdFromJwt: string | undefined = undefined;
       try {
@@ -619,13 +648,7 @@ const Index = () => {
   return (
     <div
       className="min-h-screen w-full bg-cover bg-center relative"
-      style={
-        authRole === "company"
-          ? { background: "url('/company_wallpaper.jpg') center center / cover no-repeat fixed" }
-          : authRole === "candidate"
-          ? { background: "url('/candidate_wallpaper.jpg') center center / cover no-repeat fixed" }
-          : { background: "url('/grey_wallpaper.jpg') center center / cover no-repeat fixed" }
-      }
+      style={rootStyle}
     >
       {/* Overlay e blur ora sono gestiti dentro CandidateSection */}
       {/* Header solo se autenticato */}
@@ -784,6 +807,7 @@ const Index = () => {
                   deiMode={deiMode}
                   auditLog={auditLog}
                   onCloseShortlist={handleCloseShortlist}
+                  companyName={currentUserProfile?.company}
                 />
               </TabsContent>
             )}
@@ -797,6 +821,7 @@ const Index = () => {
                 isParsing={isParsing}
                 mode={authRole === "company" ? "company" : "candidate"}
                 onCreateJd={handleCreateJd}
+                companyName={currentUserProfile?.company}
               />
             </TabsContent>
 

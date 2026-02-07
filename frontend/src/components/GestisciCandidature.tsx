@@ -11,10 +11,12 @@ import { toast } from "@/hooks/use-toast";
 import type { JobDescription } from "@/types";
 
 interface GestisciCandidatureProps {
-  onCreateJd?: (jd: Omit<JobDescription, "id" | "createdAt">) => void;
-}
+    onCreateJd?: (jd: Omit<JobDescription, "id" | "createdAt">) => void;
+    jobDescriptions: JobDescription[];
+    companyName?: string | null;
+  }
 
-const GestisciCandidature: React.FC<GestisciCandidatureProps> = ({ onCreateJd }) => {
+const GestisciCandidature: React.FC<GestisciCandidatureProps> = ({ onCreateJd, jobDescriptions, companyName }) => {
   const [jdForm, setJdForm] = useState({
     title: "",
     company: "",
@@ -117,6 +119,11 @@ const GestisciCandidature: React.FC<GestisciCandidatureProps> = ({ onCreateJd })
 
     toast({ title: "Job Description creata", description: `"${jdForm.title}" aggiunta con successo` });
   };
+
+  const myJobDescriptions = jobDescriptions.filter((jd) => {
+    if (!companyName) return true;
+    return jd.company === companyName;
+  });
 
   return (
     <Card className="p-6">
@@ -254,6 +261,38 @@ const GestisciCandidature: React.FC<GestisciCandidatureProps> = ({ onCreateJd })
       </div>
 
       <Button onClick={handleCreateJd} className="mt-6 w-full">Crea Job Description</Button>
+
+      {/* Elenco JD dell'azienda */}
+      <div className="mt-8 border-t pt-4">
+        <h4 className="text-md font-semibold mb-3">Le tue Job Description</h4>
+        {myJobDescriptions.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Nessuna JD pubblicata al momento.</p>
+        ) : (
+          <div className="space-y-3 max-h-64 overflow-y-auto">
+            {myJobDescriptions.map((jd) => (
+              <div key={jd.jd_id} className="p-3 border rounded-lg bg-muted/50 flex flex-col gap-1">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium">{jd.title}</span>
+                  {jd.location?.city || jd.location?.country ? (
+                    <span className="text-xs text-muted-foreground">
+                      {[jd.location?.city, jd.location?.country].filter(Boolean).join(", ")}
+                    </span>
+                  ) : null}
+                </div>
+                {jd.company && (
+                  <p className="text-xs text-muted-foreground">Azienda: {jd.company}</p>
+                )}
+                {jd.requirements?.length ? (
+                  <p className="text-xs text-muted-foreground truncate">
+                    Requisiti principali: {jd.requirements.slice(0, 3).join(", ")}
+                    {jd.requirements.length > 3 ? "…" : ""}
+                  </p>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </Card>
   );
 };

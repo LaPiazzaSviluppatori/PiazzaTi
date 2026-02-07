@@ -29,6 +29,7 @@ import importlib.util
 import subprocess
 import sys
 import logging
+from contextlib import nullcontext
 
 router = APIRouter(prefix="/parse", tags=["parse"])
 
@@ -60,7 +61,12 @@ def _save_parsed_cv_to_db(db: Session, user_id: str, doc_parsed) -> Document:
 
     # Transazione atomica con lock sulla riga
     from sqlalchemy import select
-    with db.begin():
+
+    # Se la Session ha già una transazione aperta (tipico dopo una query),
+    # usiamo una nested transaction per evitare "A transaction is already begun"
+    tx_ctx = db.begin_nested() if db.in_transaction() else db.begin()
+
+    with tx_ctx:
         # Lock sulla riga del vecchio CV
         old_cv = (
             db.execute(

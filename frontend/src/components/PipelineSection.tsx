@@ -12,9 +12,10 @@ interface PipelineSectionProps {
   isParsing?: boolean;
   mode?: PipelineMode;
   onCreateJd?: (jd: Omit<JobDescription, "id" | "createdAt">) => void;
+  companyName?: string | null;
 }
 
-export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode, isParsing, mode = "candidate", onCreateJd }: PipelineSectionProps) => {
+export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode, isParsing, mode = "candidate", onCreateJd, companyName }: PipelineSectionProps) => {
   const pipelineStagesCandidate = [
     { name: "CV Ingest", icon: FileText, input: "CV, Portfolio", output: "Profilo Strutturato" },
     { name: "Screening", icon: Filter, input: "Profili + JD", output: "Punteggi Match" },
@@ -77,10 +78,14 @@ export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode
         `}</style>
       </Card>
       {mode === "company" && (
-        <div>
-          <GestisciCandidature onCreateJd={onCreateJd} />
-        </div>
-      )}
+          <div>
+            <GestisciCandidature
+              onCreateJd={onCreateJd}
+              jobDescriptions={jobDescriptions}
+              companyName={companyName}
+            />
+          </div>
+        )}
     </div>
   );
 };

@@ -132,9 +132,19 @@ async def upload_jd(request: Request):
 
 @router.get("/jd/list")
 async def list_jd(db: Session = Depends(get_db)):
-    """Restituisce le prime 20 JD salvate, ordinate per data di creazione decrescente."""
-    jds = db.query(Document).filter(Document.type == "jd").order_by(Document.created_at.desc()).limit(20).all()
-    # Serializza solo i campi principali
+    """Restituisce le prime 20 JD salvate, ordinate per data di creazione decrescente.
+
+    Include anche il campo `company` presente nel parsed_json, così il frontend
+    può mostrare/filtrare le JD per azienda.
+    """
+    jds = (
+        db.query(Document)
+        .filter(Document.type == "jd")
+        .order_by(Document.created_at.desc())
+        .limit(20)
+        .all()
+    )
+
     return [
         {
             "jd_id": str(jd.id),
@@ -144,6 +154,7 @@ async def list_jd(db: Session = Depends(get_db)):
             "created_at": jd.created_at.isoformat() if jd.created_at else None,
             "requirements": (jd.parsed_json or {}).get("requirements", []),
             "nice_to_have": (jd.parsed_json or {}).get("nice_to_have", []),
+            "company": (jd.parsed_json or {}).get("company"),
         }
         for jd in jds
     ]

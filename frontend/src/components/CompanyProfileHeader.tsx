@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -7,19 +7,83 @@ import { toast } from "@/hooks/use-toast";
 
 interface CompanyProfileHeaderProps {
   isCompany?: boolean;
+  companyName?: string;
 }
 
-export const CompanyProfileHeader: React.FC<CompanyProfileHeaderProps> = ({ isCompany = false }) => {
-  const [companyName, setCompanyName] = useState<string>("");
+export const CompanyProfileHeader: React.FC<CompanyProfileHeaderProps> = ({ isCompany = false, companyName: initialCompanyName }) => {
+  const [companyName, setCompanyName] = useState<string>(initialCompanyName || "");
   const [legalName, setLegalName] = useState<string>("");
   const [profileImagePreview, setProfileImagePreview] = useState<string | null>(null);
   const [isEditingNames, setIsEditingNames] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const handleProfileImageChange = (file?: File | null) => {
-    if (!file) return setProfileImagePreview(null);
+  useEffect(() => {
+    if (initialCompanyName) {
+      setCompanyName(initialCompanyName);
+    }
+  }, [initialCompanyName]);
+
+  // Carica eventuale avatar salvato in localStorage
+  useEffect(() => {
     try {
-      setProfileImagePreview(URL.createObjectURL(file));
+      const saved = localStorage.getItem("piazzati:companyAvatar");
+      if (saved) {
+        setProfileImagePreview(saved);
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
+
+  // Carica ragione sociale salvata in localStorage
+  useEffect(() => {
+    try {
+      const savedLegal = localStorage.getItem("piazzati:companyLegalName");
+      if (savedLegal) {
+        setLegalName(savedLegal);
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
+
+  // Salva ragione sociale in localStorage quando cambia
+  useEffect(() => {
+    try {
+      if (legalName) {
+        localStorage.setItem("piazzati:companyLegalName", legalName);
+      } else {
+        localStorage.removeItem("piazzati:companyLegalName");
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }, [legalName]);
+
+  const handleProfileImageChange = (file?: File | null) => {
+    if (!file) {
+      setProfileImagePreview(null);
+      try {
+        localStorage.removeItem("piazzati:companyAvatar");
+      } catch {
+        // ignore
+      }
+      return;
+    }
+
+    try {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === "string") {
+          setProfileImagePreview(reader.result);
+          try {
+            localStorage.setItem("piazzati:companyAvatar", reader.result);
+          } catch {
+            // ignore quota/storage errors
+          }
+        }
+      };
+      reader.readAsDataURL(file);
     } catch {
       setProfileImagePreview(null);
     }
@@ -44,16 +108,17 @@ export const CompanyProfileHeader: React.FC<CompanyProfileHeaderProps> = ({ isCo
           <div className="flex items-center gap-3">
             {isEditingNames ? (
               <>
-                <Input
-                  placeholder="Nome azienda"
-                  value={companyName}
-                  onChange={e => setCompanyName(e.target.value)}
-                />
-                <Input
-                  placeholder="Ragione sociale"
-                  value={legalName}
-                  onChange={e => setLegalName(e.target.value)}
-                />
+                <div className="flex flex-col flex-1">
+                  <span className="text-lg font-semibold">
+                    {companyName || "Nome azienda"}
+                  </span>
+                  <Input
+                    placeholder="Ragione sociale"
+                    value={legalName}
+                    onChange={e => setLegalName(e.target.value)}
+                    className="mt-1"
+                  />
+                </div>
                 <Button
                   type="button"
                   variant="outline"

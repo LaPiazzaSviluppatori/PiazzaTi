@@ -28,9 +28,15 @@ def login_for_access_token(
 
 @router.get("/me")
 def read_users_me(current_user: User = Depends(get_current_user)):
+    """Ritorna le informazioni basilari dell'utente corrente, inclusi dati azienda se presenti."""
     return {
         "id": str(current_user.id),
         "email": current_user.email,
         "name": current_user.name,
+        "surname": getattr(current_user, "surname", None),
         "role": current_user.role,
+        "company": getattr(current_user, "company", None),
+        "city": getattr(current_user, "city", None),
+        "region": getattr(current_user, "region", None),
+        "country": getattr(current_user, "country", None),
     }
