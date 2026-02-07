@@ -55,8 +55,10 @@ class Config:
     EMBEDDINGS_DIR: Path = BASE_DIR / "embeddings"
     CV_EMBEDDINGS_FILE: str = "cv_embeddings.csv"
     JD_EMBEDDINGS_FILE: str = "jd_embeddings.csv"
-    CV_DATASET_PATH: Path = BASE_DIR / "Dataset/normalized/cv_dataset_normalized.csv"
-    JD_DATASET_PATH: Path = BASE_DIR / "Dataset/normalized/jd_dataset_normalized.csv"
+    # I dataset normalizzati sono nella cartella Dataset del backend (/app/Dataset)
+    DATASET_DIR: Path = BASE_DIR.parent / "Dataset"
+    CV_DATASET_PATH: Path = DATASET_DIR / "normalized" / "cv_dataset_normalized.csv"
+    JD_DATASET_PATH: Path = DATASET_DIR / "normalized" / "jd_dataset_normalized.csv"
 
     QUALITY_THRESHOLDS: Dict[str, float] = field(default_factory=lambda: {
         'excellent': 0.5, 'good': 0.3, 'weak': 0.0
