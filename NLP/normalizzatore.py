@@ -27,10 +27,20 @@ logger = logging.getLogger(__name__)
 # CONFIGURAZIONE
 # ============================================================================
 
+# I dataset CSV (cv_dataset.csv, jd_dataset.csv) sono creati in "Dataset"
+# relativa alla working directory del backend (/app).
 DATASET_DIR = Path("Dataset")
 INPUT_CV = DATASET_DIR / "cv_dataset.csv"
 INPUT_JD = DATASET_DIR / "jd_dataset.csv"
-ONTOLOGY_FILE = DATASET_DIR / "skill_ontology.json"
+
+# L'ontologia invece vive nella cartella NLP, accanto a questo script,
+# in "NLP/Dataset/skill_ontology.json" (montata come ./NLP nel container).
+if '__file__' in globals():
+    BASE_DIR = Path(__file__).parent
+else:
+    BASE_DIR = Path.cwd()
+
+ONTOLOGY_FILE = BASE_DIR / "Dataset" / "skill_ontology.json"
 
 OUTPUT_DIR = DATASET_DIR / "normalized"
 OUTPUT_CV = OUTPUT_DIR / "cv_dataset_normalized.csv"
