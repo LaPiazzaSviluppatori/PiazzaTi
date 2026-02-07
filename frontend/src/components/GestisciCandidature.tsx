@@ -309,6 +309,7 @@ const GestisciCandidature: React.FC<GestisciCandidatureProps> = ({ onCreateJd, j
   };
 
   return (
+    <>
     <Card className="p-6 space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold flex items-center gap-2">
@@ -642,6 +643,7 @@ const GestisciCandidature: React.FC<GestisciCandidatureProps> = ({ onCreateJd, j
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    </>
   );
 };
 
