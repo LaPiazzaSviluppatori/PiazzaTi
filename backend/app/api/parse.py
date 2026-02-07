@@ -171,8 +171,8 @@ def get_latest_cv(user_id: str, db: Session = Depends(get_db)):
 def append_user_skills(
     user_id: str,
     payload: SkillUpdateRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    background_tasks: BackgroundTasks | None = None,
 ):
     """Aggiunge nuove skill al CV parsato dell'utente e rilancia la pipeline embeddings.
 
