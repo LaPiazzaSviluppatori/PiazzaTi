@@ -95,6 +95,26 @@ const GestisciCandidature: React.FC<GestisciCandidatureProps> = ({ onCreateJd, j
       ? (jdForm.constraints_seniority as "junior" | "mid" | "senior")
       : "junior";
 
+    // Controllo di coerenza base tra seniority e anni di esperienza inseriti
+    const experienceYears = Number(jdForm.min_experience_years) || 0;
+    if (seniority === "senior" && experienceYears < 3) {
+      toast({
+        title: "Dati non coerenti",
+        description: "Per un ruolo senior imposta almeno qualche anno di esperienza (es. "+
+          "3+ anni) oppure scegli una seniority più bassa.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (seniority === "junior" && experienceYears > 7) {
+      toast({
+        title: "Dati non coerenti",
+        description: "Per un ruolo junior evita di richiedere troppi anni di esperienza (es. 10+).",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const allowedLevels = ["A1","A2","B1","B2","C1","C2"] as const;
     const languages_min = (jdForm.languages_min || "").split(",").map(s => {
       const [lang, level] = s.split(":");
@@ -111,7 +131,7 @@ const GestisciCandidature: React.FC<GestisciCandidatureProps> = ({ onCreateJd, j
       company: jdForm.company,
       department: jdForm.department,
       description: jdForm.description,
-      min_experience_years: Number(jdForm.min_experience_years) || 0,
+      min_experience_years: experienceYears,
       requirements: requirements.filter(r => r.type === "must").map(r => r.text),
       nice_to_have: requirements.filter(r => r.type === "nice").map(r => r.text),
       location: { city: jdForm.location_city, country: jdForm.location_country, remote: !!jdForm.location_remote },

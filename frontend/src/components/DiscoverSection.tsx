@@ -27,6 +27,7 @@ interface DiscoverSectionProps {
   onAddOpportunity: () => void;
   onEvaluateMatch: (jdId: string) => void;
   role: "candidate" | "company";
+  jwtToken?: string | null;
 }
 
 interface XAIReason {
@@ -57,6 +58,7 @@ export const DiscoverSection = ({
   onAddOpportunity,
   onEvaluateMatch,
   role,
+  jwtToken,
 }: DiscoverSectionProps) => {
   const getOpportunityIcon = (type: string) => {
     switch (type) {
@@ -224,9 +226,13 @@ export const DiscoverSection = ({
 
     try {
       setSendingApplication(true);
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (jwtToken) {
+        headers["Authorization"] = `Bearer ${jwtToken}`;
+      }
       const res = await fetch("/api/contact/apply", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ jd_id: applyJob.jd_id, message }),
       });
       if (!res.ok) {

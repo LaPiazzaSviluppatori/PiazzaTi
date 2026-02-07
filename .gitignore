@@ -46,3 +46,7 @@ Thumbs.db
 
 # Node modules (per il frontend)
 node_modules/
+
+# Output generati dalla pipeline NLP (non versionare)
+NLP/match_results/*.json
+NLP/match_results/*.csv

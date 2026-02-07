@@ -927,9 +927,27 @@ def compare_cv_with_jd(user_id: str, jd_id: str,
     if not is_valid:
         logger.error(f"Validation failed: {error_msg}")
         raise ValueError(error_msg)
-    
-    cv_emb = data['cv_embeddings'][user_id]
-    jd_emb = data['jd_embeddings'][jd_id]
+
+    # Recupera gli embedding in modo sicuro, così eventuali desincronizzazioni
+    # tra embeddings e dataset vengono restituite come errore gestito e non come KeyError.
+    cv_emb = data['cv_embeddings'].get(user_id)
+    if cv_emb is None:
+        msg = (
+            f"USER_ID '{user_id}' non ha un embedding nel dataset CV. "
+            "Rigenera gli embeddings CV o riallinea la pipeline NLP."
+        )
+        logger.error(msg)
+        raise ValueError(msg)
+
+    jd_emb = data['jd_embeddings'].get(jd_id)
+    if jd_emb is None:
+        msg = (
+            f"JD_ID '{jd_id}' non ha un embedding nel dataset JD. "
+            "Rigenera gli embeddings JD o riallinea la pipeline NLP."
+        )
+        logger.error(msg)
+        raise ValueError(msg)
+
     cosine = cosine_similarity(cv_emb, jd_emb)
     logger.info(f"Cosine similarity for user {user_id} vs jd {jd_id}: {cosine:.4f}")
     

@@ -16,6 +16,24 @@ import numpy as np
 import pandas as pd
 import logging
 
+# Importiamo le funzioni di scoring avanzato da single_match in modo da
+# avere uno score coerente tra pipeline batch e matcher singolo.
+try:
+    from single_match import Config, load_all_data, compute_features, compute_score  # type: ignore
+    _sm_config = Config()
+    _sm_data = load_all_data(_sm_config)
+    _sm_cv_data = _sm_data.get("cv_data")
+    _sm_jd_data = _sm_data.get("jd_data")
+    USE_SINGLE_MATCH_SCORING = _sm_cv_data is not None and _sm_jd_data is not None
+except Exception as _e:  # pragma: no cover - fallback sicuro
+    # Se qualcosa va storto, il motore batch continua a funzionare
+    # usando solo la cosine similarity come prima.
+    USE_SINGLE_MATCH_SCORING = False
+    _sm_config = None
+    _sm_data = None
+    _sm_cv_data = None
+    _sm_jd_data = None
+
 warnings.filterwarnings('ignore')
 
 # Config paths
@@ -145,12 +163,17 @@ def get_quality_label(score: float) -> str:
 
 @track_latency
 def find_top_k_matches(
+    jd_id: str,
     jd_embedding: np.ndarray,
     cv_embeddings: np.ndarray,
     cv_df: pd.DataFrame,
     k: int = TOP_K
 ) -> Tuple[List[Dict], str]:
-    """Trova i top-K CV più simili alla JD."""
+    """Trova i top-K CV più simili alla JD.
+
+    Se disponibile, applica lo stesso modello di scoring del matcher singolo
+    (feature engineering + pesi) in modo che lo score finale sia coerente.
+    """
     # Calcola similarità (può restituire uno scalare se c'è 1 solo CV)
     similarities = cosine_similarity_batch(jd_embedding, cv_embeddings)
 
@@ -165,17 +188,39 @@ def find_top_k_matches(
     top_indices = np.argsort(similarities)[::-1][:k]
 
     # Build results
-    matches = []
+    matches: List[Dict] = []
     for idx in top_indices:
+        base_score = float(similarities[idx])  # cosine similarity
+        final_score = base_score
+        user_id = str(cv_df.iloc[idx]['user_id'])
+
+        # Se i dati del modello avanzato sono disponibili, ricalcola lo score
+        if USE_SINGLE_MATCH_SCORING and _sm_cv_data is not None and _sm_jd_data is not None and _sm_config is not None:
+            try:
+                features = compute_features(
+                    user_id,
+                    str(jd_id),
+                    base_score,
+                    _sm_cv_data,
+                    _sm_jd_data,
+                    _sm_config,
+                )
+                score_dict = compute_score(features, _sm_config)
+                final_score = float(score_dict.get('final_score', base_score))
+            except Exception as e:  # pragma: no cover - solo logging
+                logger.exception(f"Falling back to cosine score for user={user_id}, jd={jd_id}: {e}")
+
         matches.append({
             'rank': len(matches) + 1,
-            'user_id': cv_df.iloc[idx]['user_id'],
-            'score': float(similarities[idx]),
+            'user_id': user_id,
+            'score': final_score,
+            'cosine': base_score,
             'preview': cv_df.iloc[idx]['text_content'][:200] + "...",
             'full_text': cv_df.iloc[idx]['text_content']
         })
 
-    quality = get_quality_label(float(similarities[top_indices[0]]))
+    # Determina quality label dallo score del primo candidato
+    quality = get_quality_label(matches[0]['score']) if matches else "no_candidates"
     return matches, quality
 
 
@@ -195,7 +240,7 @@ def match_all_jds(
         
         # Find matches
         (matches, quality), latency_ms = find_top_k_matches(
-            jd_embedding, cv_embeddings, cv_df
+            str(jd_id), jd_embedding, cv_embeddings, cv_df
         )
         
         # Track latency
@@ -233,7 +278,9 @@ def prepare_reranker_data(
                 'jd_id': jd_id,
                 'user_id': match['user_id'],
                 'rank': match['rank'],
-                'cosine_similarity': match['score'],
+                # Usa sempre la cosine similarity grezza per il reranker,
+                # anche se lo score finale è stato ricalcolato.
+                'cosine_similarity': match.get('cosine', match['score']),
                 'jd_text': jd_row['text_content'],
                 'cv_text': cv_row['text_content']
             })
@@ -263,7 +310,10 @@ def save_results(results: Dict, output_dir: Path):
                 {
                     'rank': m['rank'],
                     'user_id': m['user_id'],
+                    # score: modello avanzato (coerente con single_match)
                     'score': m['score'],
+                    # cosine: similarità grezza, utile per debug o analisi
+                    'cosine': m.get('cosine', m['score']),
                     'preview': m['preview']
                 }
                 for m in info['matches']

@@ -924,6 +924,7 @@ const Index = () => {
                   progressPct={progressPct}
                   progressLabel={progressLabel}
                   onUploadCV={handleUploadCV}
+                  jwtToken={jwtToken}
                 />
               </TabsContent>
             )}
@@ -953,6 +954,7 @@ const Index = () => {
                 onCreateJd={handleCreateJd}
                 companyName={currentUserProfile?.company}
                 companyApplications={companyApplications}
+                jwtToken={jwtToken}
               />
             </TabsContent>
 
@@ -985,6 +987,7 @@ const Index = () => {
                   }
                 }}
                 role={authRole ?? "candidate"}
+                jwtToken={jwtToken}
               />
             </TabsContent>
           </Tabs>

@@ -47,6 +47,7 @@ interface CandidateSectionProps {
   progressPct: number;
   progressLabel?: string;
   onUploadCV?: (cvFile: File | null, user_id?: string) => Promise<void>;
+  jwtToken?: string | null;
 }
 
 export const CandidateSection = ({
@@ -71,6 +72,7 @@ export const CandidateSection = ({
   progressPct,
   progressLabel = "",
   onUploadCV,
+  jwtToken,
 }: CandidateSectionProps) => {
   // Wrapper per upload CV che lancia anche la pipeline batch
   const handleUploadCVWithBatch = async (cvFile: File | null, user_id?: string) => {
@@ -182,7 +184,11 @@ export const CandidateSection = ({
       setLoadingInbox(true);
       setInboxError(null);
       try {
-        const res = await fetch("/api/contact/inbox");
+        const headers: Record<string, string> = {};
+        if (jwtToken) {
+          headers["Authorization"] = `Bearer ${jwtToken}`;
+        }
+        const res = await fetch("/api/contact/inbox", { headers });
         if (!res.ok) {
           const text = await res.text().catch(() => "");
           throw new Error(text || "Errore dal server");
@@ -197,7 +203,7 @@ export const CandidateSection = ({
       }
     };
     loadInbox();
-  }, [user_id]);
+  }, [user_id, jwtToken]);
 
   const handleAddSkill = async () => {
     const skillName = newSkill.trim();

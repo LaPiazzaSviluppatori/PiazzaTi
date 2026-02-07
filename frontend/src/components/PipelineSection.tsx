@@ -43,9 +43,10 @@ type CompanyApplication = {
 
 interface PipelineSectionExtendedProps extends PipelineSectionProps {
   companyApplications?: CompanyApplication[];
+  jwtToken?: string | null;
 }
 
-export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode, isParsing, mode = "candidate", onCreateJd, companyName, companyApplications = [] }: PipelineSectionExtendedProps) => {
+export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode, isParsing, mode = "candidate", onCreateJd, companyName, companyApplications = [], jwtToken }: PipelineSectionExtendedProps) => {
   const isCompanyMode = mode === "company";
 
   // Vista COMPANY: solo gestione JD + Top 20 candidati
@@ -286,9 +287,13 @@ export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode
 
     try {
       setSendingApplication(true);
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (jwtToken) {
+        headers["Authorization"] = `Bearer ${jwtToken}`;
+      }
       const res = await fetch("/api/contact/apply", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ jd_id: applyJob.jd_id, message }),
       });
       if (!res.ok) {
