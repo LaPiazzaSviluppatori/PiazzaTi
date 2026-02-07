@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -224,8 +225,11 @@ const GestisciCandidature: React.FC<GestisciCandidatureProps> = ({ onCreateJd, j
       const qa = res.quality_assessment as Record<string, unknown>;
       if (typeof qa.final_score === "number") return qa.final_score;
     }
-    if (typeof (res as any).score === "number") return (res as any).score as number;
-    if (typeof (res as any).overall_score === "number") return (res as any).overall_score as number;
+    const scoreValue = (res as { score?: unknown }).score;
+    if (typeof scoreValue === "number") return scoreValue;
+
+    const overallScoreValue = (res as { overall_score?: unknown }).overall_score;
+    if (typeof overallScoreValue === "number") return overallScoreValue;
     return null;
   };
 
