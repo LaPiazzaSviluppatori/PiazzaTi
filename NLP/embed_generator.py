@@ -29,7 +29,9 @@ if '__file__' in globals():
 else:
     BASE_DIR = Path(os.getcwd())
 
-DATASET_DIR = BASE_DIR / "Dataset" / "normalized"
+# I dataset normalizzati sono creati da normalizzatore.py in "Dataset/normalized"
+# relativa alla working directory del backend (/app), non sotto /app/NLP.
+DATASET_DIR = Path("Dataset") / "normalized"
 EMBEDDINGS_DIR = BASE_DIR / "embeddings"
 
 CV_INPUT = DATASET_DIR / "cv_dataset_normalized.csv"
