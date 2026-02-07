@@ -151,13 +151,19 @@ def find_top_k_matches(
     k: int = TOP_K
 ) -> Tuple[List[Dict], str]:
     """Trova i top-K CV più simili alla JD."""
-    
-    # Calcola similarità
+    # Calcola similarità (può restituire uno scalare se c'è 1 solo CV)
     similarities = cosine_similarity_batch(jd_embedding, cv_embeddings)
-    
+
+    # Normalizza: garantisci array 1D anche per un solo candidato
+    similarities = np.atleast_1d(similarities)
+
+    # Nessun candidato disponibile
+    if similarities.size == 0 or len(cv_df) == 0:
+        return [], "no_candidates"
+
     # Top-K indices
     top_indices = np.argsort(similarities)[::-1][:k]
-    
+
     # Build results
     matches = []
     for idx in top_indices:
@@ -168,8 +174,8 @@ def find_top_k_matches(
             'preview': cv_df.iloc[idx]['text_content'][:200] + "...",
             'full_text': cv_df.iloc[idx]['text_content']
         })
-    
-    quality = get_quality_label(similarities[top_indices[0]])
+
+    quality = get_quality_label(float(similarities[top_indices[0]]))
     return matches, quality
 
 
