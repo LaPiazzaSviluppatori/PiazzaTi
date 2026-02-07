@@ -619,7 +619,13 @@ const Index = () => {
   return (
     <div
       className="min-h-screen w-full bg-cover bg-center relative"
-      style={{ background: "url('/pink_wallpaper.jpg') center center / cover no-repeat fixed" }}
+      style={
+        authRole === "company"
+          ? { background: "url('/company_wallpaper.jpg') center center / cover no-repeat fixed" }
+          : authRole === "candidate"
+          ? { background: "url('/candidate_wallpaper.jpg') center center / cover no-repeat fixed" }
+          : { background: "url('/grey_wallpaper.jpg') center center / cover no-repeat fixed" }
+      }
     >
       {/* Overlay e blur ora sono gestiti dentro CandidateSection */}
       {/* Header solo se autenticato */}
@@ -722,7 +728,7 @@ const Index = () => {
               )}
               <TabsTrigger value="pipeline" className="flex items-center gap-2">
                 <GitBranch className="h-4 w-4" />
-                Pipeline
+                {authRole === "company" ? "Gestisci Job Description" : "Gestisci candidature"}
               </TabsTrigger>
               <TabsTrigger value="discover" className="flex items-center gap-2">
                 <Compass className="h-4 w-4" />

@@ -32,7 +32,7 @@ export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode
   return (
     <div className="space-y-6">
       <Card className="p-6">
-        <h3 className="text-lg font-semibold mb-6">{mode === 'company' ? 'Gestisci candidature' : 'Pipeline del Processo'}</h3>
+        <h3 className="text-lg font-semibold mb-6">{mode === 'company' ? 'Gestisci Job Description' : 'Pipeline del Processo'}</h3>
         <div className="flex flex-col md:flex-row items-center justify-between gap-4">
           {pipelineStages.map((stage, index) => {
             const isGlow = (mode === "candidate" && stage.name === "CV Ingest" && isParsing) ||

@@ -214,6 +214,17 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
 
+            # Ensure runtime data directories have correct ownership/permissions
+            # so the backend container (user "piazzati") can write datasets/embeddings
+            cd ${REPO_DIR}
+            chown -R piazzati:systemd-journal NLP/embeddings backend/Dataset || true
+            chmod -R 775 NLP/embeddings backend/Dataset || true
+            # Ontology file lives under NLP/Dataset and must be writable for updates
+            if [ -f NLP/Dataset/skill_ontology.json ]; then
+              chown piazzati:systemd-journal NLP/Dataset/skill_ontology.json || true
+              chmod 664 NLP/Dataset/skill_ontology.json || true
+            fi
+
             # Optionally start provisioning in background (non-blocking)
             if [ "${RUN_PROVISION:-false}" = "true" ] && [ -f ./scripts/setup-server.sh ]; then
               MODEL_NAME="${OLLAMA_MODEL_NAME:-llama3.2:3b}" REPO_DIR="${REPO_DIR}" nohup bash ./scripts/setup-server.sh > /var/log/setup-server.log 2>&1 &

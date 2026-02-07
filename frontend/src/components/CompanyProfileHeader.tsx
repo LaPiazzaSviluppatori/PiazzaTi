@@ -1,8 +1,8 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Users } from "lucide-react";
+import { Users, Pencil } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
 interface CompanyProfileHeaderProps {
@@ -13,6 +13,8 @@ export const CompanyProfileHeader: React.FC<CompanyProfileHeaderProps> = ({ isCo
   const [companyName, setCompanyName] = useState<string>("");
   const [legalName, setLegalName] = useState<string>("");
   const [profileImagePreview, setProfileImagePreview] = useState<string | null>(null);
+  const [isEditingNames, setIsEditingNames] = useState<boolean>(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleProfileImageChange = (file?: File | null) => {
     if (!file) return setProfileImagePreview(null);
@@ -39,15 +41,67 @@ export const CompanyProfileHeader: React.FC<CompanyProfileHeaderProps> = ({ isCo
         </div>
 
         <div className="flex-1">
-          <div className="flex gap-3">
-            <Input placeholder="Nome azienda" value={companyName} onChange={e => setCompanyName(e.target.value)} />
-            <Input placeholder="Ragione sociale" value={legalName} onChange={e => setLegalName(e.target.value)} />
+          <div className="flex items-center gap-3">
+            {isEditingNames ? (
+              <>
+                <Input
+                  placeholder="Nome azienda"
+                  value={companyName}
+                  onChange={e => setCompanyName(e.target.value)}
+                />
+                <Input
+                  placeholder="Ragione sociale"
+                  value={legalName}
+                  onChange={e => setLegalName(e.target.value)}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="shrink-0"
+                  onClick={() => setIsEditingNames(false)}
+                >
+                  ✓
+                </Button>
+              </>
+            ) : (
+              <>
+                <div className="flex flex-col">
+                  <span className="text-lg font-semibold">
+                    {companyName || "Nome azienda"}
+                  </span>
+                  <span className="text-sm text-muted-foreground">
+                    {legalName || "Ragione sociale"}
+                  </span>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="shrink-0"
+                  onClick={() => setIsEditingNames(true)}
+                >
+                  <Pencil className="h-4 w-4" />
+                </Button>
+              </>
+            )}
           </div>
           <div className="flex items-center gap-3 mt-3">
-            <label className="inline-flex items-center gap-2 cursor-pointer">
-              <input type="file" accept="image/*" className="hidden" onChange={e => handleProfileImageChange(e.target.files?.[0] || null)} />
-              <Button variant="outline" size="sm">Carica immagine</Button>
-            </label>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={e => handleProfileImageChange(e.target.files?.[0] || null)}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              Carica immagine
+            </Button>
             <Button onClick={handleSave} size="sm">Salva</Button>
           </div>
         </div>
