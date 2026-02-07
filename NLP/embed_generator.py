@@ -374,10 +374,12 @@ def main():
         save_embeddings(cv_df, CV_OUTPUT, 'user_id', cv_columns)
 
         # === JD FLOW ===
-        # Normalizza JD dataset
+        # Normalizza JD dataset usando la stessa ontologia di normalizzatore.py
         try:
             from normalizzatore import normalize_jd_dataset, SkillOntology, DATASET_DIR, OUTPUT_DIR
-            ontology_path = DATASET_DIR / "skill_ontology.json"
+            # Nel container backend la working dir è /app, mentre l'ontologia
+            # vive in /app/NLP/Dataset/skill_ontology.json accanto a questo script.
+            ontology_path = BASE_DIR / "Dataset" / "skill_ontology.json"
             input_jd = DATASET_DIR / "jd_dataset.csv"
             output_jd = OUTPUT_DIR / "jd_dataset_normalized.csv"
             ontology = SkillOntology(ontology_path)
