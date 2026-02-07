@@ -52,10 +52,18 @@ def get_active_jd_ids(input_path: Path) -> Set[str]:
             with open(json_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
 
-            jd_id = str(data.get('jd_id', '')) if data.get('jd_id') else ''
-            if jd_id:
-                active_jds.add(jd_id)
-        except:
+            # Normalizza jd_id: se manca, usa il nome file senza prefisso "jd_"
+            raw_id = str(data.get('jd_id', '')).strip() if data.get('jd_id') else ''
+            if not raw_id:
+                base = json_file.name.replace('.json', '')
+                if base.startswith('jd_'):
+                    raw_id = base[3:]
+                else:
+                    raw_id = base
+
+            if raw_id:
+                active_jds.add(raw_id)
+        except Exception:
             continue
 
     return active_jds
@@ -137,8 +145,15 @@ def extract_jd_id_from_json(json_path: Path) -> str:
         with open(json_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
 
-        jd_id = str(data.get('jd_id', '')) if data.get('jd_id') else ''
-        return jd_id
+        raw_id = str(data.get('jd_id', '')).strip() if data.get('jd_id') else ''
+        if not raw_id:
+            base = json_path.name.replace('.json', '')
+            if base.startswith('jd_'):
+                raw_id = base[3:]
+            else:
+                raw_id = base
+
+        return raw_id
 
     except Exception as e:
         print(f"  Errore lettura da {json_path.name}: {e}")
@@ -234,8 +249,19 @@ def json_to_row(data: Dict, source_file: str) -> Dict:
     """
     Trasforma un JSON JD in una riga del dataset.
     """
+    # Normalizza jd_id: preferisci il campo JSON, altrimenti usa il nome
+    # file senza estensione e senza prefisso "jd_" per allinearti agli
+    # ID usati dal backend (UUID puro).
+    raw_id = str(data.get('jd_id', '')).strip() if data.get('jd_id') else ''
+    if not raw_id:
+        base = source_file.replace('.json', '')
+        if base.startswith('jd_'):
+            raw_id = base[3:]
+        else:
+            raw_id = base
+
     row = {
-        'jd_id': data.get('jd_id') or source_file.replace('.json', ''),
+        'jd_id': raw_id,
         'source_file': source_file,
         'processed_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         'title': data.get('title', ''),
