@@ -21,13 +21,23 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+from pathlib import Path
+
+# Cartella base di questo script (nel container è /app/NLP)
+if '__file__' in globals():
+    BASE_DIR = Path(__file__).parent
+else:
+    BASE_DIR = Path.cwd()
+
 # Cartella condivisa dei CV JSON DENTRO il container backend.
 # In docker-compose è montata come:
 #   /var/lib/docker/piazzati-data:/app/NLP/data
 # Il backend salva i CV in /app/NLP/data/cvs tramite CVBatchStorage,
 # quindi la pipeline legge dalla stessa posizione.
-INPUT_FOLDER = "/app/NLP/data/cvs"
-OUTPUT_FOLDER = "Dataset"
+INPUT_FOLDER = str(BASE_DIR / "data" / "cvs")
+
+# Cartella dataset CSV condivisa dal backend (/app/Dataset)
+OUTPUT_FOLDER = str(BASE_DIR.parent / "Dataset")
 OUTPUT_FILENAME = "cv_dataset.csv"
 
 ARRAY_SEP = " | "

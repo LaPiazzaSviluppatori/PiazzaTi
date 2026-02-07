@@ -21,8 +21,18 @@ from datetime import datetime
 import pandas as pd
 
 
-INPUT_FOLDER = "data/jds"  # percorso relativo a BASE_DIR/NLP, montato come /app/NLP/data nel container
-OUTPUT_FOLDER = "Dataset"
+# Base directory di questo script (nel container è /app/NLP)
+if '__file__' in globals():
+    BASE_DIR = Path(__file__).parent
+else:
+    BASE_DIR = Path.cwd()
+
+# Cartella JSON JD DENTRO il container backend (/app/NLP/data/jds)
+INPUT_FOLDER = str(BASE_DIR / "data" / "jds")
+
+# Cartella condivisa dei dataset CSV DENTRO il backend (/app/Dataset)
+# In questo modo normalizzatore.py ed embed_generator.py leggono dallo stesso posto.
+OUTPUT_FOLDER = str(BASE_DIR.parent / "Dataset")
 OUTPUT_FILENAME = "jd_dataset.csv"
 
 ARRAY_SEP = " | "
