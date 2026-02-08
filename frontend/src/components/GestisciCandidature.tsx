@@ -29,7 +29,6 @@ type JDMatchCandidate = {
   user_id: string;
   score: number;
   preview?: string;
-  xai?: XAIData | null;
 };
 
 interface XAIReason {
@@ -38,16 +37,10 @@ interface XAIReason {
   contribution?: number;
 }
 
-interface XAIRisk {
-  text?: string;
-  evidence?: string;
-  contribution?: number;
-}
-
 interface XAIData {
   quality_label?: string;
   top_reasons?: XAIReason[];
-  main_risks?: XAIRisk[];
+  main_risks?: XAIReason[];
   evidence?: Record<string, unknown>;
 }
 
@@ -203,10 +196,9 @@ const GestisciCandidature: React.FC<GestisciCandidatureProps> = ({
   const [matchError, setMatchError] = useState<string | null>(null);
   const [matchCandidates, setMatchCandidates] = useState<JDMatchCandidate[] | null>(null);
 
-  // Stato XAI per spiegare perché un candidato è adatto alla JD
   const [xaiByCandidate, setXaiByCandidate] = useState<Record<string, XAIData | null>>({});
   const [xaiLoadingKey, setXaiLoadingKey] = useState<string | null>(null);
-  const [xaiError, setXaiError] = useState<string | null>(null);
+  const [xaiErrorByCandidate, setXaiErrorByCandidate] = useState<Record<string, string>>({});
 
   const [contactDialogOpen, setContactDialogOpen] = useState(false);
   const [contactDraft, setContactDraft] = useState("");
@@ -238,10 +230,16 @@ const GestisciCandidature: React.FC<GestisciCandidatureProps> = ({
     }
   };
 
+  const handleContactCandidate = (candidate: JDMatchCandidate, jdId: string, jdTitle: string) => {
+    setContactTarget({ candidate, jdId, jdTitle });
+    setContactDraft("");
+    setContactDialogOpen(true);
+  };
+
   const handleLoadXaiForCandidate = async (jdId: string, candidate: JDMatchCandidate) => {
     const key = `${jdId}:${candidate.user_id}`;
-    setXaiError(null);
     setXaiLoadingKey(key);
+    setXaiErrorByCandidate((prev) => ({ ...prev, [key]: "" }));
 
     try {
       const response = await fetch("/api/match_cv_jd", {
@@ -258,31 +256,26 @@ const GestisciCandidature: React.FC<GestisciCandidatureProps> = ({
 
       const result = (await response.json()) as Record<string, unknown>;
 
-      let xai: XAIData | null = null;
+      let candidateXai: XAIData | null = null;
       if (result.candidate && typeof result.candidate === "object") {
-        const cand = result.candidate as Record<string, unknown>;
-        if (cand.xai && typeof cand.xai === "object") {
-          xai = cand.xai as XAIData;
+        const candidateObj = result.candidate as Record<string, unknown>;
+        if (candidateObj.xai && typeof candidateObj.xai === "object") {
+          candidateXai = candidateObj.xai as XAIData;
         }
       }
-      if (!xai && result.xai && typeof result.xai === "object") {
-        xai = result.xai as XAIData;
+
+      if (!candidateXai && result.xai && typeof result.xai === "object") {
+        candidateXai = result.xai as XAIData;
       }
 
-      setXaiByCandidate((prev) => ({ ...prev, [key]: xai }));
+      setXaiByCandidate((prev) => ({ ...prev, [key]: candidateXai }));
     } catch (err) {
-      console.error("Errore caricamento XAI per candidato (GestisciCandidature)", err);
-      setXaiError("Impossibile caricare la spiegazione del modello per questo candidato.");
+      console.error("Errore caricamento XAI per candidato", err);
       setXaiByCandidate((prev) => ({ ...prev, [key]: null }));
+      setXaiErrorByCandidate((prev) => ({ ...prev, [key]: "Spiegazione non disponibile al momento." }));
     } finally {
       setXaiLoadingKey(null);
     }
-  };
-
-  const handleContactCandidate = (candidate: JDMatchCandidate, jdId: string, jdTitle: string) => {
-    setContactTarget({ candidate, jdId, jdTitle });
-    setContactDraft("");
-    setContactDialogOpen(true);
   };
 
   const handleSendContact = async () => {
@@ -644,8 +637,11 @@ const GestisciCandidature: React.FC<GestisciCandidatureProps> = ({
                         <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
                           {matchCandidates.map((c) => {
                             const key = `${jd.jd_id}:${c.user_id}`;
-                            const xai = xaiByCandidate[key] || null;
-
+                            const xai = xaiByCandidate[key];
+                            const xaiError = xaiErrorByCandidate[key];
+                            const mainReason = xai?.top_reasons && xai.top_reasons.length > 0
+                              ? xai.top_reasons[0]
+                              : null;
                             return (
                               <div
                                 key={`${c.user_id}-${c.rank}`}
@@ -663,72 +659,32 @@ const GestisciCandidature: React.FC<GestisciCandidatureProps> = ({
                                       {c.preview}
                                     </p>
                                   )}
-
-                                  {xaiLoadingKey === key ? (
-                                    <p className="text-[11px] text-muted-foreground mt-1">
-                                      Caricamento spiegazione...
-                                    </p>
-                                  ) : xai ? (
-                                    <div className="mt-1 text-[11px] text-muted-foreground space-y-1">
-                                      <p className="font-semibold">
-                                        Perché pensiamo possa essere un buon candidato
-                                        {xai.quality_label
-                                          ? ` (qualità complessiva: ${xai.quality_label})`
-                                          : ":"}
+                                  <div className="mt-1">
+                                    {xaiLoadingKey === key ? (
+                                      <p className="text-[10px] text-muted-foreground">
+                                        Caricamento spiegazione...
                                       </p>
-                                      {xai.top_reasons && xai.top_reasons.length > 0 ? (
-                                        <div>
-                                          <p className="font-semibold mt-0.5">Punti di forza principali</p>
-                                          <ul className="list-disc ml-4 mt-1 space-y-0.5">
-                                            {xai.top_reasons.slice(0, 4).map((r, idx) => (
-                                              <li key={idx}>
-                                                <span>{r.text || ""}</span>
-                                                {r.evidence && (
-                                                  <span className="ml-1 text-muted-foreground">
-                                                    ({r.evidence})
-                                                  </span>
-                                                )}
-                                              </li>
-                                            ))}
-                                          </ul>
-                                        </div>
-                                      ) : (
-                                        <p>
-                                          Nessuna spiegazione dettagliata disponibile, ma il modello considera alto il
-                                          match.
-                                        </p>
-                                      )}
-                                      {xai.main_risks && xai.main_risks.length > 0 && (
-                                        <div className="mt-1">
-                                          <p className="font-semibold">Possibili rischi / punti di attenzione</p>
-                                          <ul className="list-disc ml-4 mt-1 space-y-0.5">
-                                            {xai.main_risks.slice(0, 3).map((r, idx) => (
-                                              <li key={idx}>
-                                                <span>{r.text || ""}</span>
-                                                {r.evidence && (
-                                                  <span className="ml-1 text-muted-foreground">
-                                                    ({r.evidence})
-                                                  </span>
-                                                )}
-                                              </li>
-                                            ))}
-                                          </ul>
-                                        </div>
-                                      )}
-                                    </div>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      className="mt-1 text-[11px] text-primary underline"
-                                      onClick={() => handleLoadXaiForCandidate(jd.jd_id, c)}
-                                    >
-                                      Perché pensiamo possa essere un buon candidato
-                                    </button>
-                                  )}
-
-                                  {xaiError && (
-                                    <p className="text-[10px] text-destructive mt-1">{xaiError}</p>
-                                  )}
+                                    ) : mainReason ? (
+                                      <p className="text-[10px] text-green-700">
+                                        Perché: {mainReason.text}
+                                        {mainReason.evidence && (
+                                          <span className="text-muted-foreground"> ({mainReason.evidence})</span>
+                                        )}
+                                      </p>
+                                    ) : xaiError ? (
+                                      <p className="text-[10px] text-muted-foreground">
+                                        {xaiError}
+                                      </p>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        className="text-[10px] text-primary underline"
+                                        onClick={() => handleLoadXaiForCandidate(jd.jd_id, c)}
+                                      >
+                                        Vedi breve spiegazione
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
                                 <div className="flex flex-col items-end gap-1">
                                   <Button

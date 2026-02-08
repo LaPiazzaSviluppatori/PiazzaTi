@@ -836,6 +836,30 @@ const Index = () => {
     }
   };
 
+  // Carica il profilo candidato dal backend (ultimo CV parsato) dato uno user_id
+  const loadCandidateProfileFromBackend = async (userId: string, token: string) => {
+    try {
+      const res = await fetch(`/api/parse/user/${userId}/cv/latest`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (!res.ok) {
+        // 404: nessun CV ancora caricato, silenzioso
+        return;
+      }
+      const data = await res.json();
+      const parsed = (data.parsed_json || {}) as ParsedCandidateBackend;
+      if (!parsed.user_id) {
+        parsed.user_id = userId;
+      }
+      handleCandidateParsed(parsed);
+      setActiveCandidateId(userId);
+    } catch (err) {
+      console.warn("Impossibile caricare il profilo candidato dal backend", err);
+    }
+  };
+
   // Job description creation (persistente su backend)
   const handleCreateJd = async (jd: Omit<JobDescription, "jd_id">) => {
     try {
@@ -991,10 +1015,13 @@ const Index = () => {
         // errore decodifica
       }
       if (userIdFromJwt) {
-        // Cerca il candidato con quell'id, se esiste
+        // Cerca il candidato con quell'id, se esiste già in locale
         const found = candidates.find(c => c.id === userIdFromJwt);
         if (found) {
           setActiveCandidateId(userIdFromJwt);
+        } else if (selectedRole === "candidate") {
+          // Se login come candidato e non c'è ancora in locale, prova a ricostruirlo dal backend
+          await loadCandidateProfileFromBackend(userIdFromJwt, data.access_token);
         }
       }
 
