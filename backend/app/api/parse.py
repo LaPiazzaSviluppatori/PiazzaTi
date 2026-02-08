@@ -109,6 +109,8 @@ def _start_batch_process(process_date: str | None = None) -> None:
         cmd = [sys.executable, str(script_path), "--process-date", pd]
         logger.info("Avviando batch processor: %s", " ".join(cmd))
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+        logger.info("Batch processor stdout:\n%s", result.stdout)
+        logger.info("Batch processor stderr:\n%s", result.stderr)
         if result.returncode != 0:
             logger.error("Batch processor fallito (code=%d): %s", result.returncode, result.stderr)
         else:

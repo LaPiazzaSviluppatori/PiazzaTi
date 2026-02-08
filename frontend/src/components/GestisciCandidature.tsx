@@ -372,7 +372,7 @@ const GestisciCandidature: React.FC<GestisciCandidatureProps> = ({ onCreateJd, j
               );
             })}
           </div>
-      </div>
+        </div>
 
       {isFormOpen && (
         <>
