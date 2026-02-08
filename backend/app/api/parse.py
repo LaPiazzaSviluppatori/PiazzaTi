@@ -193,12 +193,24 @@ def append_user_skills(
     if not payload.skills:
         raise HTTPException(status_code=400, detail="Nessuna skill fornita")
 
-    doc = db.query(Document).filter_by(user_id=user_id, type="cv", is_latest=True).first()
+    logger.info("[append_user_skills] Request to append skills for user_id=%s skills=%s", user_id, payload.skills)
+
+    # NB: Document.user_id è UUID; convertiamo esplicitamente la stringa per evitare mismatch silenziosi
+    from uuid import UUID
+    try:
+        user_uuid = UUID(str(user_id))
+    except Exception:
+        logger.error("[append_user_skills] user_id non è un UUID valido: %s", user_id)
+        raise HTTPException(status_code=400, detail="user_id non valido")
+
+    doc = db.query(Document).filter_by(user_id=user_uuid, type="cv", is_latest=True).first()
     if not doc or not doc.parsed_json:
+        logger.warning("[append_user_skills] Nessun CV is_latest trovato per user_id=%s", user_uuid)
         raise HTTPException(status_code=404, detail="Nessun CV caricato per questo utente")
     try:
         parsed_doc = ParsedDocument(**doc.parsed_json)
     except Exception as e:  # pragma: no cover - errore raro di deserializzazione
+        logger.exception("[append_user_skills] Errore ricostruendo ParsedDocument per doc_id=%s: %s", doc.id, e)
         raise HTTPException(status_code=500, detail=f"Impossibile ricostruire ParsedDocument: {e}")
 
     existing_names = {s.name.lower() for s in parsed_doc.skills if s.name}
@@ -216,23 +228,36 @@ def append_user_skills(
         added.append(name)
 
     if not added:
+        logger.info(
+            "[append_user_skills] Nessuna nuova skill aggiunta per user_id=%s (tutte già presenti)",
+            user_uuid,
+        )
         return {"message": "Nessuna nuova skill aggiunta (già presenti)", "document_id": str(doc.id)}
 
     # Salva un nuovo Document come ultimo CV per l'utente
-    new_doc = _save_parsed_cv_to_db(db, user_id, parsed_doc)
+    new_doc = _save_parsed_cv_to_db(db, str(user_uuid), parsed_doc)
 
     # Salva anche il JSON aggiornato nella cartella batch NLP
     batch_storage = get_batch_storage()
     json_path = batch_storage.save_parsed_cv(parsed_doc, getattr(parsed_doc, "file_name", None))
+    logger.info(
+        "[append_user_skills] Salvato JSON batch per user_id=%s doc_id=%s path=%s added_skills=%s",
+        user_uuid,
+        getattr(parsed_doc, "document_id", None) or str(new_doc.id if new_doc else doc.id),
+        json_path,
+        added,
+    )
 
     # Avvia pipeline batch (embeddings) per la data odierna
     try:
         if background_tasks is not None:
             process_date = datetime.now().strftime("%Y-%m-%d")
-            logger.info("Scheduling batch process for date %s (skills append)", process_date)
+            logger.info("[append_user_skills] Scheduling batch process for date %s (skills append)", process_date)
             background_tasks.add_task(_start_batch_process, process_date)
+        else:
+            logger.warning("[append_user_skills] background_tasks è None, batch non schedulato")
     except Exception as e:  # pragma: no cover - errore non critico
-        logger.exception("Impossibile schedulare batch automatico dopo append skill: %s", str(e))
+        logger.exception("[append_user_skills] Impossibile schedulare batch automatico dopo append skill: %s", str(e))
 
     return {
         "message": "Skill aggiornate e pipeline embeddings avviata",

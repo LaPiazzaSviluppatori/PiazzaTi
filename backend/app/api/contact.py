@@ -18,6 +18,7 @@ class ContactCandidatePayload(BaseModel):
     jd_id: str
     candidate_id: str
     message: str
+    origin: Optional[str] = None  # "spontaneous" | "top20" | altri in futuro
 
 
 @router.post("/contact/candidate")
@@ -42,6 +43,7 @@ async def contact_candidate(
             "from_role": getattr(current_user, "role", None) if current_user else None,
             "from_company": getattr(current_user, "company", None) if current_user else None,
             "from_name": getattr(current_user, "name", None) if current_user else None,
+            "origin": payload.origin,
             "jd_id": payload.jd_id,
             "candidate_id": payload.candidate_id,
             "message": payload.message,
@@ -62,6 +64,7 @@ class InboxMessage(BaseModel):
     message: str
     from_company: Optional[str] = None
     from_name: Optional[str] = None
+    origin: Optional[str] = None
 
 
 class ConversationMessage(BaseModel):
@@ -105,9 +108,15 @@ async def get_inbox(
                 except json.JSONDecodeError:
                     continue
 
-        # Filtra per candidate_id == current_user.id
+        # Filtra per candidate_id == current_user.id e solo messaggi provenienti dall'azienda
+        # (from_role == "company" o None per compatibilità con vecchi dati)
         cid = str(current_user.id)
-        entries = [e for e in raw_entries if str(e.get("candidate_id")) == cid]
+        entries = [
+            e
+            for e in raw_entries
+            if str(e.get("candidate_id")) == cid
+            and (e.get("from_role") is None or str(e.get("from_role")) == "company")
+        ]
 
         # Precarica mittenti dal DB
         sender_ids = {e.get("from_user_id") for e in entries if e.get("from_user_id")}
@@ -137,6 +146,7 @@ async def get_inbox(
                 message=str(e.get("message", "")),
                 from_company=getattr(sender, "company", None) if sender else None,
                 from_name=getattr(sender, "name", None) if sender else None,
+                origin=str(e.get("origin")) if e.get("origin") is not None else None,
             )
             result.append(msg)
 

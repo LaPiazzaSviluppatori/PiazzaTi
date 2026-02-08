@@ -1,5 +1,5 @@
 import React from "react";
-import { Bell } from "lucide-react";
+import { Bell, MessageCircle } from "lucide-react";
 
 type HeaderProps = {
   onLogout?: () => void;
@@ -7,15 +7,35 @@ type HeaderProps = {
   inboxCount?: number;
   hasUnreadInbox?: boolean;
   onToggleInbox?: () => void;
+   showChat?: boolean;
+   onToggleChat?: () => void;
 };
 
-const Header: React.FC<HeaderProps> = ({ onLogout, showInbox, inboxCount = 0, hasUnreadInbox, onToggleInbox }) => {
+const Header: React.FC<HeaderProps> = ({
+  onLogout,
+  showInbox,
+  inboxCount = 0,
+  hasUnreadInbox,
+  onToggleInbox,
+  showChat,
+  onToggleChat,
+}) => {
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/60">
       <div className="container flex h-16 items-center justify-between px-4">
         <div className="flex-1" />
         <h1 className="text-pink-700 font-bold uppercase tracking-wide text-xl sm:text-2xl text-center">PIAZZATI</h1>
         <div className="flex-1 flex items-center justify-end gap-3">
+          {showChat && (
+            <button
+              type="button"
+              className="relative inline-flex items-center justify-center rounded-full h-9 w-9 border border-pink-900 bg-pink-50 text-pink-900 hover:bg-pink-100 focus:outline-none"
+              onClick={onToggleChat}
+              title="Chat"
+            >
+              <MessageCircle className="h-4 w-4" />
+            </button>
+          )}
           {showInbox && (
             <button
               type="button"

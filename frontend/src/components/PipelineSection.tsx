@@ -57,17 +57,19 @@ export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode
     candidateUserId: string;
     jdId: string;
     jdTitle: string;
-    candidateEmail?: string | null;
+    candidateName?: string | null;
   } | null>(null);
 
   const handleOpenContactFromApplication = (app: CompanyApplication, jdTitle?: string) => {
-    const effectiveTitle = jdTitle || "candidatura spontanea";
-    const defaultMessage = `Ciao, stiamo valutando la tua ${effectiveTitle}. Se ti va, possiamo fissare una breve call per conoscerci meglio e raccontarti il ruolo.`;
+    const effectiveTitle = jdTitle?.trim();
+    const defaultMessage = effectiveTitle
+      ? `Ciao, abbiamo ricevuto la tua candidatura per la posizione "${effectiveTitle}". Se ti va, possiamo fissare una breve call per conoscerci meglio e raccontarti il ruolo.`
+      : "Ciao, abbiamo ricevuto la tua candidatura spontanea. Se ti va, possiamo fissare una breve call per conoscerci meglio e raccontarti il ruolo.";
     setCompanyContactTarget({
       candidateUserId: app.candidate_user_id,
       jdId: app.jd_id,
       jdTitle: effectiveTitle,
-      candidateEmail: app.candidate_email ?? undefined,
+      candidateName: app.candidate_name ?? null,
     });
     setCompanyContactDraft(defaultMessage);
     setCompanyContactDialogOpen(true);
@@ -98,6 +100,7 @@ export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode
           jd_id: companyContactTarget.jdId,
           candidate_id: companyContactTarget.candidateUserId,
           message,
+          origin: "spontaneous",
         }),
       });
       if (!res.ok) {
@@ -166,7 +169,7 @@ export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode
                     <p className="text-xs whitespace-pre-wrap">{app.message}</p>
                     <div className="mt-2 flex justify-end">
                       <Button
-                        size="xs"
+                        size="sm"
                         variant="outline"
                         onClick={() => handleOpenContactFromApplication(app, jd?.title)}
                       >
@@ -201,7 +204,7 @@ export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode
             <div className="space-y-3 py-2">
               {companyContactTarget && (
                 <p className="text-xs text-muted-foreground">
-                  Per: <span className="font-semibold">{companyContactTarget.candidateEmail || "candidato"}</span>
+                  Per: <span className="font-semibold">{companyContactTarget.candidateName || "candidato"}</span>
                   {" · "}
                   <span className="italic">{companyContactTarget.jdTitle}</span>
                 </p>

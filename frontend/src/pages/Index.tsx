@@ -166,6 +166,7 @@ const Index = () => {
     message: string;
     from_company?: string | null;
     from_name?: string | null;
+    origin?: string | null;
   };
 
   const [inboxMessages, setInboxMessages] = useState<InboxMessage[]>([]);
@@ -217,11 +218,13 @@ const Index = () => {
   const [conversationMessages, setConversationMessages] = useState<ConversationMessage[]>([]);
   const [loadingConversation, setLoadingConversation] = useState(false);
   const [conversationDraft, setConversationDraft] = useState("");
+  const [lastConversationJdId, setLastConversationJdId] = useState<string | null>(null);
 
   const [openCompanyConversation, setOpenCompanyConversation] = useState<{ jdId: string; candidateId: string } | null>(null);
   const [companyConversationMessages, setCompanyConversationMessages] = useState<ConversationMessage[]>([]);
   const [loadingCompanyConversation, setLoadingCompanyConversation] = useState(false);
   const [companyConversationDraft, setCompanyConversationDraft] = useState("");
+  const [lastCompanyConversation, setLastCompanyConversation] = useState<{ jdId: string; candidateId: string } | null>(null);
 
   // Candidature ricevute lato azienda
   type CompanyApplication = {
@@ -285,46 +288,70 @@ const Index = () => {
     }
   };
 
-  const fetchConversation = async (jdId: string) => {
-    if (!jwtToken || authRole !== "candidate") return;
-    try {
-      setLoadingConversation(true);
-      const res = await fetch(`/api/contact/conversation?jd_id=${encodeURIComponent(jdId)}`, {
-        headers: { Authorization: `Bearer ${jwtToken}` },
-      });
-      if (!res.ok) return;
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        setConversationMessages(data as ConversationMessage[]);
-      }
-    } catch {
-      // silenzioso per ora
-    } finally {
-      setLoadingConversation(false);
-    }
-  };
-
-  const fetchCompanyConversation = async (jdId: string, candidateId: string) => {
-    if (!jwtToken || authRole !== "company") return;
-    try {
-      setLoadingCompanyConversation(true);
-      const res = await fetch(
-        `/api/contact/conversation/company?jd_id=${encodeURIComponent(jdId)}&candidate_id=${encodeURIComponent(candidateId)}`,
-        {
+  const fetchConversation = useCallback(
+    async (jdId: string) => {
+      if (!jwtToken || authRole !== "candidate") return;
+      try {
+        setLoadingConversation(true);
+        const res = await fetch(`/api/contact/conversation?jd_id=${encodeURIComponent(jdId)}`, {
           headers: { Authorization: `Bearer ${jwtToken}` },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setConversationMessages(data as ConversationMessage[]);
         }
-      );
-      if (!res.ok) return;
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        setCompanyConversationMessages(data as ConversationMessage[]);
+      } catch {
+        // silenzioso per ora
+      } finally {
+        setLoadingConversation(false);
       }
-    } catch {
-      // silenzioso per ora
-    } finally {
-      setLoadingCompanyConversation(false);
-    }
-  };
+    },
+    [jwtToken, authRole]
+  );
+
+  const fetchCompanyConversation = useCallback(
+    async (jdId: string, candidateId: string) => {
+      if (!jwtToken || authRole !== "company") return;
+      try {
+        setLoadingCompanyConversation(true);
+        const res = await fetch(
+          `/api/contact/conversation/company?jd_id=${encodeURIComponent(jdId)}&candidate_id=${encodeURIComponent(candidateId)}`,
+          {
+            headers: { Authorization: `Bearer ${jwtToken}` },
+          }
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setCompanyConversationMessages(data as ConversationMessage[]);
+        }
+      } catch {
+        // silenzioso per ora
+      } finally {
+        setLoadingCompanyConversation(false);
+      }
+    },
+    [jwtToken, authRole]
+  );
+
+  // Aggiornamento periodico chat candidato mentre il modal è aperto
+  useEffect(() => {
+    if (authRole !== "candidate" || !jwtToken || !openConversationJdId) return;
+    const interval = setInterval(() => {
+      fetchConversation(openConversationJdId);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [authRole, jwtToken, openConversationJdId, fetchConversation]);
+
+  // Aggiornamento periodico chat azienda mentre il modal è aperto
+  useEffect(() => {
+    if (authRole !== "company" || !jwtToken || !openCompanyConversation) return;
+    const interval = setInterval(() => {
+      fetchCompanyConversation(openCompanyConversation.jdId, openCompanyConversation.candidateId);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [authRole, jwtToken, openCompanyConversation, fetchCompanyConversation]);
 
   const fetchCompanyApplications = async () => {
     if (!jwtToken || authRole !== "company") return;
@@ -889,6 +916,58 @@ const Index = () => {
               ? hasUnreadInbox
               : authRole === "company" && unreadCompanyApplications.length > 0
           }
+          showChat={true}
+          onToggleChat={async () => {
+            if (!authRole) return;
+            if (authRole === "candidate") {
+              // Se la chat è aperta, chiudila
+              if (openConversationJdId) {
+                setOpenConversationJdId(null);
+                setConversationMessages([]);
+                setConversationDraft("");
+                return;
+              }
+              // Altrimenti apri l'ultima conversazione o la prima disponibile
+              let targetJdId = lastConversationJdId;
+              if (!targetJdId && inboxMessages.length > 0) {
+                targetJdId = inboxMessages[0].jd_id;
+              }
+              if (!targetJdId) {
+                toast({
+                  title: "Nessuna chat",
+                  description: "Non hai ancora conversazioni attive con le aziende.",
+                });
+                return;
+              }
+              setOpenConversationJdId(targetJdId);
+              setLastConversationJdId(targetJdId);
+              await fetchConversation(targetJdId);
+            } else if (authRole === "company") {
+              // Se la chat è aperta, chiudila
+              if (openCompanyConversation) {
+                setOpenCompanyConversation(null);
+                setCompanyConversationMessages([]);
+                setCompanyConversationDraft("");
+                return;
+              }
+              // Altrimenti apri l'ultima conversazione o la prima candidatura disponibile
+              let target = lastCompanyConversation;
+              if (!target && companyApplications.length > 0) {
+                const first = companyApplications[0];
+                target = { jdId: first.jd_id, candidateId: first.candidate_user_id };
+              }
+              if (!target) {
+                toast({
+                  title: "Nessuna chat",
+                  description: "Non hai ancora conversazioni attive con i candidati.",
+                });
+                return;
+              }
+              setOpenCompanyConversation(target);
+              setLastCompanyConversation(target);
+              await fetchCompanyConversation(target.jdId, target.candidateId);
+            }
+          }}
           onToggleInbox={async () => {
             if (authRole === "candidate") {
               if (!inboxOpen) {
@@ -938,6 +1017,7 @@ const Index = () => {
                   type="button"
                   className="mt-1 text-[11px] text-primary hover:underline"
                   onClick={async () => {
+                    setLastConversationJdId(msg.jd_id);
                     markInboxAsSeen(msg);
                     setOpenConversationJdId(msg.jd_id);
                     await fetchConversation(msg.jd_id);
@@ -1001,8 +1081,10 @@ const Index = () => {
                     onClick={async () => {
                       markCompanyAppAsSeen(app);
                       setInboxOpen(false);
-                      setOpenCompanyConversation({ jdId: app.jd_id, candidateId: app.candidate_user_id });
-                      await fetchCompanyConversation(app.jd_id, app.candidate_user_id);
+                      const conv = { jdId: app.jd_id, candidateId: app.candidate_user_id };
+                      setOpenCompanyConversation(conv);
+                      setLastCompanyConversation(conv);
+                      await fetchCompanyConversation(conv.jdId, conv.candidateId);
                     }}
                   >
                     Apri chat
@@ -1020,12 +1102,22 @@ const Index = () => {
           <div className="w-full max-w-md max-h-[80vh] bg-white rounded-lg shadow-lg border flex flex-col">
             <div className="px-4 py-2 border-b flex items-center justify-between">
               <div className="flex flex-col">
-                <span className="text-sm font-semibold">Chat con l'azienda</span>
                 {(() => {
                   const jd = jobDescriptions.find((j) => j.jd_id === openConversationJdId);
-                  return jd ? (
-                    <span className="text-[11px] text-muted-foreground">Posizione: {jd.title}</span>
-                  ) : null;
+                  const firstCompanyMsg = conversationMessages.find(
+                    (m) => m.from_role === "company" && m.from_company
+                  );
+                  const companyName = firstCompanyMsg?.from_company || jd?.company || "";
+                  return (
+                    <>
+                      <span className="text-sm font-semibold">
+                        {companyName ? `Chat con ${companyName}` : "Chat con l'azienda"}
+                      </span>
+                      {jd && (
+                        <span className="text-[11px] text-muted-foreground">Posizione: {jd.title}</span>
+                      )}
+                    </>
+                  );
                 })()}
               </div>
               <button
@@ -1203,6 +1295,7 @@ const Index = () => {
                       jd_id: openCompanyConversation.jdId,
                       candidate_id: openCompanyConversation.candidateId,
                       message: text,
+                      origin: "top20",
                     }),
                   });
                   if (!res.ok) {

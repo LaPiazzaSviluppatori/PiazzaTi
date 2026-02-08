@@ -172,6 +172,7 @@ export const CandidateSection = ({
     message: string;
     from_company?: string | null;
     from_name?: string | null;
+    origin?: string | null;
   };
 
   const [inboxMessages, setInboxMessages] = useState<InboxMessage[]>([]);
@@ -697,7 +698,8 @@ export const CandidateSection = ({
                   <div className="space-y-2">
                     {inboxMessages
                       .filter((msg) =>
-                        candidateApplications.some((app) => app.jd_id === msg.jd_id)
+                        msg.origin === "spontaneous" ||
+                        (!msg.origin && candidateApplications.some((app) => app.jd_id === msg.jd_id))
                       )
                       .map((msg) => (
                         <div key={msg.id} className="rounded-lg border p-3 text-sm">
@@ -721,7 +723,8 @@ export const CandidateSection = ({
                         </div>
                       ))}
                     {inboxMessages.filter((msg) =>
-                      candidateApplications.some((app) => app.jd_id === msg.jd_id)
+                      msg.origin === "spontaneous" ||
+                      (!msg.origin && candidateApplications.some((app) => app.jd_id === msg.jd_id))
                     ).length === 0 && (
                       <p className="text-xs text-muted-foreground">
                         Non hai ancora ricevuto risposte alle tue candidature spontanee.
@@ -736,7 +739,8 @@ export const CandidateSection = ({
                   <div className="space-y-2">
                     {inboxMessages
                       .filter((msg) =>
-                        !candidateApplications.some((app) => app.jd_id === msg.jd_id)
+                        msg.origin === "top20" ||
+                        (!msg.origin && !candidateApplications.some((app) => app.jd_id === msg.jd_id))
                       )
                       .map((msg) => (
                         <div key={msg.id} className="rounded-lg border p-3 text-sm">
@@ -760,7 +764,8 @@ export const CandidateSection = ({
                         </div>
                       ))}
                     {inboxMessages.filter((msg) =>
-                      !candidateApplications.some((app) => app.jd_id === msg.jd_id)
+                      msg.origin === "top20" ||
+                      (!msg.origin && !candidateApplications.some((app) => app.jd_id === msg.jd_id))
                     ).length === 0 && (
                       <p className="text-xs text-muted-foreground">
                         Al momento non hai ancora ricevuto contatti da aziende che ti hanno trovato nella Top 20.
