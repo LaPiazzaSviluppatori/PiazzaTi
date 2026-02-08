@@ -398,6 +398,39 @@ const Index = () => {
     }
   };
 
+  const clearMyFeedback = async () => {
+    if (!jwtToken || authRole !== "candidate") return;
+    try {
+      const res = await fetch("/api/contact/feedback/my", {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${jwtToken}`,
+        },
+      });
+      if (!res.ok) {
+        const txt = await res.text();
+        toast({
+          title: "Errore cancellazione feedback",
+          description: txt || "Non è stato possibile cancellare i feedback.",
+          variant: "destructive",
+        });
+        return;
+      }
+      setFeedback([]);
+      toast({
+        title: "Feedback cancellati",
+        description: "Tutti i feedback dalle aziende sono stati rimossi.",
+      });
+    } catch (err) {
+      console.error("Errore cancellazione feedback", err);
+      toast({
+        title: "Errore cancellazione feedback",
+        description: "Non è stato possibile cancellare i feedback.",
+        variant: "destructive",
+      });
+    }
+  };
+
   const fetchConversation = useCallback(
     async (jdId: string) => {
       if (!jwtToken || authRole !== "candidate") return;
@@ -516,6 +549,18 @@ const Index = () => {
       setCompanyApplications([]);
       setCompanyReplies([]);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authRole, jwtToken]);
+
+  // Polling leggero per aggiornare la inbox (campanella) del candidato
+  useEffect(() => {
+    if (authRole !== "candidate" || !jwtToken) return;
+
+    const intervalId = window.setInterval(() => {
+      fetchInbox();
+    }, 8000);
+
+    return () => window.clearInterval(intervalId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authRole, jwtToken]);
 
@@ -1347,20 +1392,62 @@ const Index = () => {
                   );
                 })()}
               </div>
-              <button
-                type="button"
-                className="text-xs text-muted-foreground hover:underline"
-                onClick={() => {
-                  setOpenConversationJdId(null);
-                  setConversationMessages([]);
-                  setConversationDraft("");
-                }}
-              >
-                Chiudi
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  className="text-[11px] text-muted-foreground hover:underline"
+                  onClick={async () => {
+                    if (!jwtToken || !openConversationJdId) {
+                      return;
+                    }
+                    try {
+                      const res = await fetch(`/api/contact/conversation?jd_id=${encodeURIComponent(openConversationJdId)}`, {
+                        method: "DELETE",
+                        headers: {
+                          Authorization: `Bearer ${jwtToken}`,
+                        },
+                      });
+                      if (!res.ok) {
+                        const txt = await res.text();
+                        toast({
+                          title: "Errore cancellazione chat",
+                          description: txt || "Non è stato possibile cancellare la chat.",
+                          variant: "destructive",
+                        });
+                      } else {
+                        setConversationMessages([]);
+                        toast({
+                          title: "Chat cancellata",
+                          description: "La conversazione è stata svuotata.",
+                        });
+                      }
+                    } catch (err) {
+                      console.error("Errore cancellazione conversazione", err);
+                      toast({
+                        title: "Errore cancellazione chat",
+                        description: "Non è stato possibile cancellare la chat.",
+                        variant: "destructive",
+                      });
+                    }
+                  }}
+                >
+                  Cancella chat
+                </button>
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground hover:underline"
+                  onClick={() => {
+                    setOpenConversationJdId(null);
+                    setConversationMessages([]);
+                    setConversationDraft("");
+                  }}
+                >
+                  Chiudi
+                </button>
+              </div>
             </div>
             <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2 text-xs bg-muted/40">
-              {loadingConversation && (
+              {loadingConversation && conversationMessages.length === 0 && (
                 <div className="text-center text-[11px] text-muted-foreground">Caricamento conversazione...</div>
               )}
               {!loadingConversation && conversationMessages.length === 0 && (
@@ -1473,7 +1560,7 @@ const Index = () => {
               </button>
             </div>
             <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2 text-xs bg-muted/40">
-              {loadingCompanyConversation && (
+              {loadingCompanyConversation && companyConversationMessages.length === 0 && (
                 <div className="text-center text-[11px] text-muted-foreground">Caricamento conversazione...</div>
               )}
               {!loadingCompanyConversation && companyConversationMessages.length === 0 && (
@@ -1830,6 +1917,7 @@ const Index = () => {
                   progressLabel={progressLabel}
                   onUploadCV={handleUploadCV}
                   jwtToken={jwtToken}
+                  onClearFeedback={clearMyFeedback}
                 />
               </TabsContent>
             )}

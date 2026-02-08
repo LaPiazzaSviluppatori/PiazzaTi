@@ -222,6 +222,54 @@ async def get_conversation(
         raise HTTPException(status_code=500, detail=f"Errore lettura conversazione: {e}")
 
 
+@router.delete("/contact/conversation")
+async def delete_conversation(
+    jd_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Permette al candidato di cancellare la propria conversazione per una JD.
+
+    Riscrive il file JSONL dei messaggi escludendo tutte le righe per quel
+    candidate_id e jd_id. Questo rimuove la cronologia sia lato candidato
+    sia lato azienda (per la demo va bene così).
+    """
+
+    if current_user.role != "candidate":
+        raise HTTPException(status_code=403, detail="Solo i candidati possono cancellare le conversazioni")
+
+    base_dir = Path("/app/data")
+    log_path = base_dir / "contact_messages.jsonl"
+
+    if not log_path.exists():
+        return {"status": "ok"}
+
+    try:
+        cid = str(current_user.id)
+        kept_lines: List[str] = []
+        with log_path.open("r", encoding="utf-8") as f:
+            for line in f:
+                raw_line = line.strip()
+                if not raw_line:
+                    continue
+                try:
+                    obj = json.loads(raw_line)
+                except json.JSONDecodeError:
+                    kept_lines.append(line)
+                    continue
+                if str(obj.get("candidate_id")) == cid and str(obj.get("jd_id")) == jd_id:
+                    # scartiamo i messaggi della conversazione da cancellare
+                    continue
+                kept_lines.append(line)
+
+        with log_path.open("w", encoding="utf-8") as f:
+            for l in kept_lines:
+                f.write(l if l.endswith("\n") else l + "\n")
+
+        return {"status": "ok"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore cancellazione conversazione: {e}")
+
+
 class ApplyPayload(BaseModel):
     jd_id: str
     message: Optional[str] = None
@@ -658,6 +706,53 @@ async def get_my_feedback(
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Errore lettura feedback: {e}")
+
+
+@router.delete("/contact/feedback/my")
+async def delete_my_feedback(
+    current_user: User = Depends(get_current_user),
+):
+    """Permette al candidato di cancellare tutti i feedback ricevuti.
+
+    Per semplicità nella demo, rimuoviamo dal file JSONL tutte le righe
+    associate al candidate_id corrente.
+    """
+
+    if current_user.role != "candidate":
+        raise HTTPException(status_code=403, detail="Solo i candidati possono cancellare i propri feedback")
+
+    base_dir = Path("/app/data")
+    log_path = base_dir / "feedback.jsonl"
+
+    if not log_path.exists():
+        return {"status": "ok"}
+
+    try:
+        cid = str(current_user.id)
+        kept_lines: List[str] = []
+        with log_path.open("r", encoding="utf-8") as f:
+            for line in f:
+                raw_line = line.strip()
+                if not raw_line:
+                    continue
+                try:
+                    obj = json.loads(raw_line)
+                except json.JSONDecodeError:
+                    # conserviamo le righe non parseabili per non perdere dati
+                    kept_lines.append(line)
+                    continue
+                if str(obj.get("candidate_id")) == cid:
+                    # scartiamo i feedback del candidato corrente
+                    continue
+                kept_lines.append(line)
+
+        with log_path.open("w", encoding="utf-8") as f:
+            for l in kept_lines:
+                f.write(l if l.endswith("\n") else l + "\n")
+
+        return {"status": "ok"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore cancellazione feedback: {e}")
 
 
 class ConversationReplyPayload(BaseModel):

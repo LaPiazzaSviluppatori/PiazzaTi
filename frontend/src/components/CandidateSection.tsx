@@ -48,6 +48,7 @@ interface CandidateSectionProps {
   progressLabel?: string;
   onUploadCV?: (cvFile: File | null, user_id?: string) => Promise<void>;
   jwtToken?: string | null;
+  onClearFeedback?: () => void;
 }
 
 export const CandidateSection = ({
@@ -73,6 +74,7 @@ export const CandidateSection = ({
   progressLabel = "",
   onUploadCV,
   jwtToken,
+  onClearFeedback,
 }: CandidateSectionProps) => {
   // Wrapper per upload CV che lancia anche la pipeline batch
   const handleUploadCVWithBatch = async (cvFile: File | null, user_id?: string) => {
@@ -606,7 +608,18 @@ export const CandidateSection = ({
 
         {/* Feedback dalle aziende */}
         <Card className="p-6">
-          <h3 className="text-lg font-semibold mb-4">Feedback dalle aziende</h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold">Feedback dalle aziende</h3>
+            {user_id && feedback.length > 0 && (
+              <button
+                type="button"
+                className="text-[11px] text-muted-foreground hover:underline"
+                onClick={onClearFeedback}
+              >
+                Cancella tutti
+              </button>
+            )}
+          </div>
           {!user_id && (
             <p className="text-xs text-muted-foreground">
               Accedi e carica il tuo CV per ricevere feedback dalle aziende sulle posizioni a cui ti candidi o in cui compari nella Top 20.
