@@ -9,7 +9,6 @@ import { DiscoverSection } from "@/components/DiscoverSection";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   mockOpportunities,
-  mockFeedback,
   mockAuditLog,
 } from "@/data/mockData";
 import {
@@ -149,7 +148,7 @@ const Index = () => {
         .catch(() => {});
     }, []);
   const [opportunities, setOpportunities] = useState<Opportunity[]>(mockOpportunities);
-  const [feedback, setFeedback] = useState<Feedback[]>(mockFeedback);
+  const [feedback, setFeedback] = useState<Feedback[]>([]);
   const [auditLog, setAuditLog] = useState<AuditLogEntry[]>(mockAuditLog);
 
   const [selectedJdId, setSelectedJdId] = useState<string | null>(jobDescriptions[0]?.jd_id || null);
@@ -174,8 +173,8 @@ const Index = () => {
   const [hasUnreadInbox, setHasUnreadInbox] = useState(false);
 
   const buildInboxKey = useCallback((msg: InboxMessage): string => {
-    return [msg.timestamp, msg.jd_id, msg.from_company || "", msg.from_name || "", msg.message]
-      .join("|");
+    // Usa l'id stabile generato dal backend per identificare in modo univoco il messaggio
+    return msg.id;
   }, []);
 
   const [seenInboxKeys, setSeenInboxKeys] = useState<string[]>(() => {
@@ -225,6 +224,7 @@ const Index = () => {
   const [loadingCompanyConversation, setLoadingCompanyConversation] = useState(false);
   const [companyConversationDraft, setCompanyConversationDraft] = useState("");
   const [lastCompanyConversation, setLastCompanyConversation] = useState<{ jdId: string; candidateId: string } | null>(null);
+  const [companyFeedbackSending, setCompanyFeedbackSending] = useState<"positive" | "constructive" | "neutral" | null>(null);
 
   // Candidature ricevute lato azienda
   type CompanyApplication = {
@@ -285,6 +285,45 @@ const Index = () => {
       }
     } catch {
       // silenzioso: la inbox non è critica
+    }
+  };
+  type ApiFeedback = {
+    id: string;
+    timestamp?: string;
+    jd_id: string;
+    jd_title?: string | null;
+    company?: string | null;
+    type?: string;
+    message?: string | null;
+  };
+
+  const fetchFeedback = async () => {
+    if (!jwtToken || authRole !== "candidate") return;
+    try {
+      const res = await fetch("/api/contact/feedback/my", {
+        headers: {
+          Authorization: `Bearer ${jwtToken}`,
+        },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        const mapped: Feedback[] = (data as ApiFeedback[]).map((fb) => ({
+          id: String(fb.id),
+          from: fb.company || "",
+          message: String(fb.message ?? ""),
+          date: String(fb.timestamp ?? new Date().toISOString()),
+          type:
+            fb.type === "positive" || fb.type === "constructive" || fb.type === "neutral"
+              ? (fb.type as Feedback["type"])
+              : "neutral",
+          jdTitle: fb.jd_title ?? undefined,
+          company: fb.company ?? undefined,
+        }));
+        setFeedback(mapped);
+      }
+    } catch {
+      // per ora silenzioso, i feedback non sono critici
     }
   };
 
@@ -374,10 +413,12 @@ const Index = () => {
   useEffect(() => {
     if (authRole === "candidate" && jwtToken) {
       fetchInbox();
+      fetchFeedback();
     } else {
       setInboxMessages([]);
       setInboxOpen(false);
       setHasUnreadInbox(false);
+      setFeedback([]);
     }
     if (authRole === "company" && jwtToken) {
       fetchCompanyApplications();
@@ -971,7 +1012,11 @@ const Index = () => {
           onToggleInbox={async () => {
             if (authRole === "candidate") {
               if (!inboxOpen) {
+                // Apertura: carica messaggi
                 await fetchInbox();
+              } else {
+                // Chiusura: segna tutti i messaggi attuali come letti
+                unreadInboxMessages.forEach((msg) => markInboxAsSeen(msg));
               }
               setInboxOpen((prev) => !prev);
             } else if (authRole === "company") {
@@ -1336,6 +1381,139 @@ const Index = () => {
                 Invia
               </button>
             </form>
+            {/* Azioni di feedback finale sull'application */}
+            <div className="border-t px-3 py-2 flex flex-wrap gap-2 items-center bg-muted/30">
+              <span className="text-[11px] text-muted-foreground mr-1">Invia feedback finale:</span>
+              <button
+                type="button"
+                className="text-[11px] px-2 py-1 rounded bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60"
+                disabled={companyFeedbackSending !== null || !openCompanyConversation || !jwtToken}
+                onClick={async () => {
+                  if (!openCompanyConversation || !jwtToken) return;
+                  try {
+                    setCompanyFeedbackSending("positive");
+                    const res = await fetch("/api/contact/feedback", {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${jwtToken}`,
+                      },
+                      body: JSON.stringify({
+                        jd_id: openCompanyConversation.jdId,
+                        candidate_id: openCompanyConversation.candidateId,
+                        type: "positive",
+                        message: "Il candidato è stato accettato e procederemo con i prossimi step.",
+                      }),
+                    });
+                    if (!res.ok) {
+                      const txt = await res.text();
+                      throw new Error(txt || "Errore dal server");
+                    }
+                    toast({
+                      title: "Feedback inviato",
+                      description: "Feedback positivo inviato al candidato.",
+                    });
+                  } catch (err) {
+                    console.error("Errore invio feedback positivo", err);
+                    toast({
+                      title: "Errore invio feedback",
+                      description: "Non è stato possibile inviare il feedback positivo.",
+                      variant: "destructive",
+                    });
+                  } finally {
+                    setCompanyFeedbackSending(null);
+                  }
+                }}
+              >
+                Accettato
+              </button>
+              <button
+                type="button"
+                className="text-[11px] px-2 py-1 rounded bg-amber-500 text-black hover:bg-amber-600 disabled:opacity-60"
+                disabled={companyFeedbackSending !== null || !openCompanyConversation || !jwtToken}
+                onClick={async () => {
+                  if (!openCompanyConversation || !jwtToken) return;
+                  try {
+                    setCompanyFeedbackSending("constructive");
+                    const res = await fetch("/api/contact/feedback", {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${jwtToken}`,
+                      },
+                      body: JSON.stringify({
+                        jd_id: openCompanyConversation.jdId,
+                        candidate_id: openCompanyConversation.candidateId,
+                        type: "constructive",
+                        message: "Grazie per la candidatura. Al momento proseguiamo con altri profili, ma il tuo resta interessante per future opportunità.",
+                      }),
+                    });
+                    if (!res.ok) {
+                      const txt = await res.text();
+                      throw new Error(txt || "Errore dal server");
+                    }
+                    toast({
+                      title: "Feedback inviato",
+                      description: "Feedback di gentile rifiuto inviato al candidato.",
+                    });
+                  } catch (err) {
+                    console.error("Errore invio feedback costruttivo", err);
+                    toast({
+                      title: "Errore invio feedback",
+                      description: "Non è stato possibile inviare il feedback di rifiuto.",
+                      variant: "destructive",
+                    });
+                  } finally {
+                    setCompanyFeedbackSending(null);
+                  }
+                }}
+              >
+                Rifiuto gentile
+              </button>
+              <button
+                type="button"
+                className="text-[11px] px-2 py-1 rounded bg-slate-500 text-white hover:bg-slate-600 disabled:opacity-60"
+                disabled={companyFeedbackSending !== null || !openCompanyConversation || !jwtToken}
+                onClick={async () => {
+                  if (!openCompanyConversation || !jwtToken) return;
+                  try {
+                    setCompanyFeedbackSending("neutral");
+                    const res = await fetch("/api/contact/feedback", {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${jwtToken}`,
+                      },
+                      body: JSON.stringify({
+                        jd_id: openCompanyConversation.jdId,
+                        candidate_id: openCompanyConversation.candidateId,
+                        type: "neutral",
+                        message: "Abbiamo concluso lo screening per questa posizione. Ti aggiorneremo in caso di sviluppi futuri.",
+                      }),
+                    });
+                    if (!res.ok) {
+                      const txt = await res.text();
+                      throw new Error(txt || "Errore dal server");
+                    }
+                    toast({
+                      title: "Feedback inviato",
+                      description: "Feedback neutro inviato al candidato.",
+                    });
+                  } catch (err) {
+                    console.error("Errore invio feedback neutro", err);
+                    toast({
+                      title: "Errore invio feedback",
+                      description: "Non è stato possibile inviare il feedback neutro.",
+                      variant: "destructive",
+                    });
+                  } finally {
+                    setCompanyFeedbackSending(null);
+                  }
+                }}
+              >
+                Neutro
+              </button>
+            </div>
           </div>
         </div>
       )}

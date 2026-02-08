@@ -162,82 +162,6 @@ export const CandidateSection = ({
   };
 
   // Candidate Login Modal state
-  
-          
-  // Messaggi reali ricevuti dalle aziende (inbox)
-  type InboxMessage = {
-    id: string;
-    timestamp: string;
-    jd_id: string;
-    message: string;
-    from_company?: string | null;
-    from_name?: string | null;
-    origin?: string | null;
-  };
-
-  const [inboxMessages, setInboxMessages] = useState<InboxMessage[]>([]);
-  const [loadingInbox, setLoadingInbox] = useState(false);
-  const [inboxError, setInboxError] = useState<string | null>(null);
-
-  type CandidateApplication = {
-    id: string;
-    timestamp: string;
-    jd_id: string;
-    company?: string | null;
-    message: string;
-  };
-
-  const [candidateApplications, setCandidateApplications] = useState<CandidateApplication[]>([]);
-
-  const loadInbox = useCallback(async () => {
-    if (!user_id) return;
-    setLoadingInbox(true);
-    setInboxError(null);
-    try {
-      const headers: Record<string, string> = {};
-      if (jwtToken) {
-        headers["Authorization"] = `Bearer ${jwtToken}`;
-      }
-      const [inboxRes, appsRes] = await Promise.all([
-        fetch("/api/contact/inbox", { headers }),
-        fetch("/api/contact/my_applications", { headers }),
-      ]);
-
-      if (!inboxRes.ok) {
-        const text = await inboxRes.text().catch(() => "");
-        throw new Error(text || "Errore dal server inbox");
-      }
-      if (!appsRes.ok) {
-        const text = await appsRes.text().catch(() => "");
-        throw new Error(text || "Errore dal server candidature");
-      }
-
-      const inboxData = (await inboxRes.json()) as InboxMessage[];
-      const appsData = (await appsRes.json()) as CandidateApplication[];
-      setInboxMessages(inboxData);
-      setCandidateApplications(appsData);
-    } catch (err) {
-      console.error("Errore caricamento inbox candidato", err);
-      setInboxError("Non è stato possibile caricare i messaggi dalle aziende.");
-    } finally {
-      setLoadingInbox(false);
-    }
-  }, [user_id, jwtToken]);
-
-  // Caricamento iniziale inbox + candidature
-  useEffect(() => {
-    if (!user_id) return;
-    loadInbox();
-  }, [user_id, loadInbox]);
-
-  // Aggiornamento periodico dei messaggi dalle aziende mentre sei nella CandidateSection
-  useEffect(() => {
-    if (!user_id) return;
-    const interval = setInterval(() => {
-      loadInbox();
-    }, 4000);
-    return () => clearInterval(interval);
-  }, [user_id, loadInbox]);
 
   const handleAddSkill = async () => {
     const skillName = newSkill.trim();
@@ -680,114 +604,65 @@ export const CandidateSection = ({
           )}
         </Card>
 
-        {/* Feedback ricevuti dalle aziende, divisi per tipo */}
+        {/* Feedback dalle aziende */}
         <Card className="p-6">
-          <h3 className="text-lg font-semibold mb-4">Messaggi dalle aziende</h3>
-          <div className="space-y-4">
-            {!user_id && (
-              <p className="text-xs text-muted-foreground">
-                Accedi e carica il tuo CV per ricevere e visualizzare i messaggi personalizzati dalle aziende.
-              </p>
-            )}
-            {user_id && loadingInbox && (
-              <p className="text-xs text-muted-foreground">Caricamento messaggi in corso...</p>
-            )}
-            {user_id && inboxError && (
-              <p className="text-xs text-destructive">{inboxError}</p>
-            )}
-
-            {user_id && !loadingInbox && !inboxError && inboxMessages.length === 0 && (
-              <p className="text-xs text-muted-foreground">
-                Al momento non hai ancora ricevuto messaggi dalle aziende. Quando un recruiter ti contatterà, troverai qui le sue comunicazioni.
-              </p>
-            )}
-
-            {user_id && !loadingInbox && !inboxError && inboxMessages.length > 0 && (
-              <>
-                {/* Messaggi come risposta a candidature spontanee */}
-                <div>
-                  <h4 className="text-sm font-semibold mb-2">Risposte alle tue candidature spontanee</h4>
-                  <div className="space-y-2">
-                    {inboxMessages
-                      .filter((msg) =>
-                        msg.origin === "spontaneous" ||
-                        (!msg.origin && candidateApplications.some((app) => app.jd_id === msg.jd_id))
-                      )
-                      .map((msg) => (
-                        <div key={msg.id} className="rounded-lg border p-3 text-sm">
-                          <div className="flex items-center justify-between mb-1">
-                            <div className="flex flex-col">
-                              <span className="font-semibold">
-                                {msg.from_company || "Azienda"}
-                              </span>
-                              {msg.from_name && (
-                                <span className="text-[11px] text-muted-foreground">{msg.from_name}</span>
-                              )}
-                            </div>
-                            <span className="text-[11px] text-muted-foreground">
-                              {new Date(msg.timestamp).toLocaleString()}
-                            </span>
-                          </div>
-                          <p className="text-muted-foreground text-xs mb-1">{msg.message}</p>
+          <h3 className="text-lg font-semibold mb-4">Feedback dalle aziende</h3>
+          {!user_id && (
+            <p className="text-xs text-muted-foreground">
+              Accedi e carica il tuo CV per ricevere feedback dalle aziende sulle posizioni a cui ti candidi o in cui compari nella Top 20.
+            </p>
+          )}
+          {user_id && feedback.length === 0 && (
+            <p className="text-xs text-muted-foreground">
+              Al momento non hai ancora ricevuto feedback dalle aziende.
+            </p>
+          )}
+          {user_id && feedback.length > 0 && (
+            <div className="space-y-3">
+              {feedback.map((item) => {
+                const label =
+                  item.type === "positive"
+                    ? "Accettato"
+                    : item.type === "constructive"
+                    ? "Gentile rifiuto"
+                    : "Neutro";
+                const badgeClass =
+                  item.type === "positive"
+                    ? "bg-success text-success-foreground"
+                    : item.type === "constructive"
+                    ? "border-warning text-warning"
+                    : "";
+                return (
+                  <div key={item.id} className="rounded-lg border p-3 text-sm">
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex flex-col">
+                        <span className="font-semibold">{item.from}</span>
+                        {(item.jdTitle || item.company) && (
                           <span className="text-[11px] text-muted-foreground">
-                            Riferimento JD: {msg.jd_id}
+                            {item.jdTitle}
+                            {item.jdTitle && item.company ? " • " : ""}
+                            {item.company && !item.jdTitle ? item.company : item.company && item.jdTitle ? item.company : null}
                           </span>
-                        </div>
-                      ))}
-                    {inboxMessages.filter((msg) =>
-                      msg.origin === "spontaneous" ||
-                      (!msg.origin && candidateApplications.some((app) => app.jd_id === msg.jd_id))
-                    ).length === 0 && (
-                      <p className="text-xs text-muted-foreground">
-                        Non hai ancora ricevuto risposte alle tue candidature spontanee.
+                        )}
+                      </div>
+                      <Badge
+                        variant={item.type === "positive" ? "default" : "outline"}
+                        className={badgeClass}
+                      >
+                        {label}
+                      </Badge>
+                    </div>
+                    {item.date && (
+                      <p className="text-[11px] text-muted-foreground mb-1">
+                        {new Date(item.date).toLocaleDateString()}
                       </p>
                     )}
+                    <p className="text-xs text-muted-foreground">{item.message}</p>
                   </div>
-                </div>
-
-                {/* Messaggi da aziende che ti hanno selezionato nella Top 20 */}
-                <div>
-                  <h4 className="text-sm font-semibold mb-2">Messaggi da aziende che ti hanno scelto nella Top 20</h4>
-                  <div className="space-y-2">
-                    {inboxMessages
-                      .filter((msg) =>
-                        msg.origin === "top20" ||
-                        (!msg.origin && !candidateApplications.some((app) => app.jd_id === msg.jd_id))
-                      )
-                      .map((msg) => (
-                        <div key={msg.id} className="rounded-lg border p-3 text-sm">
-                          <div className="flex items-center justify-between mb-1">
-                            <div className="flex flex-col">
-                              <span className="font-semibold">
-                                {msg.from_company || "Azienda"}
-                              </span>
-                              {msg.from_name && (
-                                <span className="text-[11px] text-muted-foreground">{msg.from_name}</span>
-                              )}
-                            </div>
-                            <span className="text-[11px] text-muted-foreground">
-                              {new Date(msg.timestamp).toLocaleString()}
-                            </span>
-                          </div>
-                          <p className="text-muted-foreground text-xs mb-1">{msg.message}</p>
-                          <span className="text-[11px] text-muted-foreground">
-                            Riferimento JD: {msg.jd_id}
-                          </span>
-                        </div>
-                      ))}
-                    {inboxMessages.filter((msg) =>
-                      msg.origin === "top20" ||
-                      (!msg.origin && !candidateApplications.some((app) => app.jd_id === msg.jd_id))
-                    ).length === 0 && (
-                      <p className="text-xs text-muted-foreground">
-                        Al momento non hai ancora ricevuto contatti da aziende che ti hanno trovato nella Top 20.
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </Card>
 
         {/* Profili Consigliati */}

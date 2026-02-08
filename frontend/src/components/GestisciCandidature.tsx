@@ -29,6 +29,7 @@ type JDMatchCandidate = {
   user_id: string;
   score: number;
   preview?: string;
+  xai?: XAIData | null;
 };
 
 interface XAIReason {
@@ -237,26 +238,25 @@ const GestisciCandidature: React.FC<GestisciCandidatureProps> = ({
     }
   };
 
-  const handleLoadXaiForCandidate = async (jdId: string, candidate: JDMatchCandidate) => {
+  const handleLoadXaiForCandidate = (jdId: string, candidate: JDMatchCandidate) => {
     const key = `${jdId}:${candidate.user_id}`;
-    setXaiLoadingKey(key);
     setXaiError(null);
+    setXaiLoadingKey(key);
 
-    try {
-      // TODO: usa lo stesso endpoint XAI che avevi in precedenza
-      const res = await fetch(`/api/jd/xai/${jdId}/${candidate.user_id}`);
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || "Errore dal server XAI");
-      }
-      const data = (await res.json()) as XAIData;
-      setXaiByCandidate((prev) => ({ ...prev, [key]: data }));
-    } catch (err) {
-      console.error("Errore caricamento XAI per candidato", err);
-      setXaiError("Impossibile caricare la spiegazione del modello per questo candidato.");
-    } finally {
+    const xai = candidate.xai ?? null;
+
+    if (!xai) {
+      console.warn(
+        "Spiegazione XAI non disponibile per questo candidato nei risultati di matching",
+      );
+      setXaiByCandidate((prev) => ({ ...prev, [key]: null }));
+      setXaiError("Nessuna spiegazione dettagliata disponibile per questo candidato.");
       setXaiLoadingKey(null);
+      return;
     }
+
+    setXaiByCandidate((prev) => ({ ...prev, [key]: xai }));
+    setXaiLoadingKey(null);
   };
 
   const handleContactCandidate = (candidate: JDMatchCandidate, jdId: string, jdTitle: string) => {

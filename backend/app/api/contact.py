@@ -2,6 +2,7 @@ from datetime import datetime
 import json
 from pathlib import Path
 from typing import Optional, List, Dict, Any
+from enum import Enum
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -414,6 +415,146 @@ async def get_my_applications(
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Errore lettura candidature candidato: {e}")
+
+
+class FeedbackType(str, Enum):
+    POSITIVE = "positive"
+    CONSTRUCTIVE = "constructive"
+    NEUTRAL = "neutral"
+
+
+class SendFeedbackPayload(BaseModel):
+    jd_id: str
+    candidate_id: str
+    type: FeedbackType
+    message: Optional[str] = None
+
+
+class CandidateFeedback(BaseModel):
+    id: str
+    timestamp: str
+    jd_id: str
+    jd_title: Optional[str] = None
+    company: Optional[str] = None
+    type: FeedbackType
+    message: str
+
+
+@router.post("/contact/feedback")
+async def send_feedback(
+    payload: SendFeedbackPayload,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Consente all'azienda di inviare un feedback finale su un candidato per una JD.
+
+    Il feedback viene salvato in un file JSONL dedicato (feedback.jsonl) e conterrà
+    tipo (positive/constructive/neutral), messaggio opzionale, titolo JD e nome azienda.
+    """
+
+    if current_user.role != "company":
+        raise HTTPException(status_code=403, detail="Solo le aziende possono inviare feedback")
+
+    base_dir = Path("/app/data")
+    try:
+        base_dir.mkdir(parents=True, exist_ok=True)
+        log_path = base_dir / "feedback.jsonl"
+
+        jd_title: Optional[str] = None
+        company_name: Optional[str] = getattr(current_user, "company", None)
+
+        # Recupera informazioni sulla JD per arricchire il feedback
+        try:
+            jd = db.query(Document).filter(Document.id == payload.jd_id).first()
+            if jd is not None:
+                if jd.parsed_json and isinstance(jd.parsed_json, dict):
+                    jd_title = jd.parsed_json.get("title") or jd_title
+                    company_name = jd.parsed_json.get("company") or company_name
+                if not jd_title:
+                    jd_title = jd.title
+        except Exception:
+            # Se qualcosa va storto col DB, continuiamo comunque salvando il feedback
+            pass
+
+        entry: Dict[str, Any] = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "from_user_id": str(current_user.id),
+            "from_company": getattr(current_user, "company", None),
+            "from_name": getattr(current_user, "name", None),
+            "candidate_id": str(payload.candidate_id),
+            "jd_id": payload.jd_id,
+            "jd_title": jd_title,
+            "company": company_name,
+            "type": payload.type.value,
+            "message": payload.message or "",
+        }
+
+        with log_path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+        return {"status": "ok"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore salvataggio feedback: {e}")
+
+
+@router.get("/contact/feedback/my", response_model=List[CandidateFeedback])
+async def get_my_feedback(
+    current_user: User = Depends(get_current_user),
+):
+    """Restituisce tutti i feedback ricevuti dal candidato corrente.
+
+    I feedback sono letti dal file JSONL dedicato e ordinati per timestamp decrescente.
+    """
+
+    if current_user.role != "candidate":
+        raise HTTPException(status_code=403, detail="Solo i candidati possono vedere i propri feedback")
+
+    base_dir = Path("/app/data")
+    log_path = base_dir / "feedback.jsonl"
+
+    if not log_path.exists():
+        return []
+
+    try:
+        raw_entries: List[Dict[str, Any]] = []
+        with log_path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    raw = json.loads(line)
+                    raw_entries.append(raw)
+                except json.JSONDecodeError:
+                    continue
+
+        cid = str(current_user.id)
+        entries = [e for e in raw_entries if str(e.get("candidate_id")) == cid]
+
+        def parse_ts(ts: str) -> float:
+            try:
+                return datetime.fromisoformat(ts).timestamp()
+            except Exception:
+                return 0.0
+
+        entries.sort(key=lambda e: parse_ts(str(e.get("timestamp", ""))), reverse=True)
+
+        result: List[CandidateFeedback] = []
+        for idx, e in enumerate(entries):
+            fb = CandidateFeedback(
+                id=f"{e.get('timestamp','')}:{idx}",
+                timestamp=str(e.get("timestamp")),
+                jd_id=str(e.get("jd_id")),
+                jd_title=str(e.get("jd_title")) if e.get("jd_title") is not None else None,
+                company=str(e.get("company")) if e.get("company") is not None else None,
+                type=FeedbackType(str(e.get("type", "neutral"))),
+                message=str(e.get("message", "")),
+            )
+            result.append(fb)
+
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore lettura feedback: {e}")
 
 
 class ConversationReplyPayload(BaseModel):

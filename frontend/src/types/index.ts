@@ -104,6 +104,8 @@ export interface Feedback {
   message: string;
   date: string;
   type: "positive" | "constructive" | "neutral";
+  jdTitle?: string;
+  company?: string;
 }
 
 export interface AuditLogEntry {

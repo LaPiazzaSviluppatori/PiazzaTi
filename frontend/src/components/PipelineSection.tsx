@@ -46,6 +46,25 @@ interface PipelineSectionExtendedProps extends PipelineSectionProps {
   jwtToken?: string | null;
 }
 
+interface XAIReason {
+  text?: string;
+  evidence?: string;
+  contribution?: number;
+}
+
+interface XAIRisk {
+  text?: string;
+  evidence?: string;
+  contribution?: number;
+}
+
+interface XAIData {
+  quality_label?: string;
+  top_reasons?: XAIReason[];
+  main_risks?: XAIRisk[];
+  evidence?: Record<string, unknown>;
+}
+
 export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode, isParsing, mode = "candidate", onCreateJd, companyName, companyApplications = [], jwtToken }: PipelineSectionExtendedProps) => {
   const isCompanyMode = mode === "company";
   const spontaneousSectionRef = useRef<HTMLDivElement | null>(null);
@@ -132,121 +151,6 @@ export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode
     }
   };
 
-  // Vista COMPANY: solo gestione JD + Top 20 candidati
-  if (isCompanyMode) {
-    return (
-      <div className="space-y-6">
-        <GestisciCandidature
-          onCreateJd={onCreateJd}
-          jobDescriptions={jobDescriptions}
-          companyName={companyName}
-          jwtToken={jwtToken}
-        />
-        {companyApplications.length > 0 && (
-          <div ref={spontaneousSectionRef} id="company-spontaneous-section">
-            <Card className="p-6">
-              <h3 className="text-lg font-semibold mb-4">Candidature spontanee</h3>
-              <div className="space-y-3 max-h-80 overflow-y-auto pr-1 text-sm">
-              {companyApplications.map((app) => {
-                const jd = jobDescriptions.find((j) => j.jd_id === app.jd_id);
-                return (
-                  <div key={app.id} className="border rounded-lg px-3 py-2 bg-muted/50">
-                    <div className="flex flex-col mb-1">
-                      <span className="font-semibold">Candidato</span>
-                      {app.candidate_name && (
-                        <span className="text-xs text-muted-foreground">{app.candidate_name}</span>
-                      )}
-                    </div>
-                    {jd ? (
-                      <div className="text-xs text-muted-foreground mb-1">
-                        Per la posizione: {jd.title}
-                      </div>
-                    ) : (
-                      <div className="text-xs text-muted-foreground mb-1">
-                        Candidatura spontanea
-                      </div>
-                    )}
-                    <p className="text-xs whitespace-pre-wrap">{app.message}</p>
-                    <div className="mt-2 flex justify-end">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleOpenContactFromApplication(app, jd?.title)}
-                      >
-                        Contatta candidato
-                      </Button>
-                    </div>
-                  </div>
-                );
-              })}
-              </div>
-            </Card>
-          </div>
-        )}
-        <Dialog
-          open={companyContactDialogOpen}
-          onOpenChange={(open) => {
-            setCompanyContactDialogOpen(open);
-            if (!open) {
-              setCompanyContactTarget(null);
-              setCompanyContactDraft("");
-              setCompanySendingContact(false);
-            }
-          }}
-        >
-          <DialogContent className="max-w-lg">
-            <DialogHeader>
-              <DialogTitle>Invia un messaggio al candidato</DialogTitle>
-              <DialogDescription>
-                Scrivi un breve messaggio di contatto che il candidato vedrà nella sua inbox.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-3 py-2">
-              {companyContactTarget && (
-                <p className="text-xs text-muted-foreground">
-                  Per: <span className="font-semibold">{companyContactTarget.candidateName || "candidato"}</span>
-                  {" · "}
-                  <span className="italic">{companyContactTarget.jdTitle}</span>
-                </p>
-              )}
-              <div className="space-y-2">
-                <Label htmlFor="company-contact-message">Messaggio</Label>
-                <Textarea
-                  id="company-contact-message"
-                  rows={5}
-                  value={companyContactDraft}
-                  onChange={(e) => setCompanyContactDraft(e.target.value)}
-                  placeholder="Presentati brevemente e proponi un eventuale prossimo passo (es. call)."
-                />
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 mt-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  setCompanyContactDialogOpen(false);
-                  setCompanyContactTarget(null);
-                  setCompanyContactDraft("");
-                  setCompanySendingContact(false);
-                }}
-              >
-                Annulla
-              </Button>
-              <Button
-                type="button"
-                onClick={handleSendContactFromApplication}
-                disabled={companySendingContact}
-              >
-                {companySendingContact ? "Invio..." : "Invia messaggio"}
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-      </div>
-    );
-  }
-
   // Vista CANDIDATE: Top 20 JD consigliate (niente pipeline grafica)
   const activeCandidate = candidates[0];
   const scoredJd = useMemo(() => {
@@ -283,25 +187,6 @@ export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode
   const [realScores, setRealScores] = useState<Record<string, number>>({});
   const [loadingMatchId, setLoadingMatchId] = useState<string | null>(null);
 
-  interface XAIReason {
-    text?: string;
-    evidence?: string;
-    contribution?: number;
-  }
-
-  interface XAIRisk {
-    text?: string;
-    evidence?: string;
-    contribution?: number;
-  }
-
-  interface XAIData {
-    quality_label?: string;
-    top_reasons?: XAIReason[];
-    main_risks?: XAIRisk[];
-    evidence?: Record<string, unknown>;
-  }
-
   const [openDialog, setOpenDialog] = useState<string | null>(null);
   const [xaiData, setXaiData] = useState<XAIData | null>(null);
   const [loadingXai, setLoadingXai] = useState(false);
@@ -310,20 +195,27 @@ export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode
   const [applyMessage, setApplyMessage] = useState("");
   const [sendingApplication, setSendingApplication] = useState(false);
 
+  type MatcherResult = {
+    candidate?: { score?: number | null; xai?: XAIData | null } | null;
+    quality_assessment?: { final_score?: number | null } | null;
+    score?: number | null;
+    overall_score?: number | null;
+  };
+
   const extractScore = (result: unknown): number | null => {
     if (!result || typeof result !== "object") return null;
-    const res = result as Record<string, unknown>;
+    const res = result as MatcherResult;
 
-    if (typeof res.candidate === "object" && res.candidate !== null) {
-      const candidate = res.candidate as Record<string, unknown>;
-      if (typeof candidate.score === "number") return candidate.score;
+    if (res.candidate && typeof res.candidate.score === "number") {
+      return res.candidate.score;
     }
-    if (typeof res.quality_assessment === "object" && res.quality_assessment !== null) {
-      const qa = res.quality_assessment as Record<string, unknown>;
-      if (typeof qa.final_score === "number") return qa.final_score;
+
+    if (res.quality_assessment && typeof res.quality_assessment.final_score === "number") {
+      return res.quality_assessment.final_score;
     }
-    if (typeof (res as any).score === "number") return (res as any).score as number;
-    if (typeof (res as any).overall_score === "number") return (res as any).overall_score as number;
+
+    if (typeof res.score === "number") return res.score;
+    if (typeof res.overall_score === "number") return res.overall_score;
     return null;
   };
 
@@ -494,6 +386,121 @@ export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode
       setSendingApplication(false);
     }
   };
+
+  // Vista COMPANY: solo gestione JD + Top 20 candidati
+  if (isCompanyMode) {
+    return (
+      <div className="space-y-6">
+        <GestisciCandidature
+          onCreateJd={onCreateJd}
+          jobDescriptions={jobDescriptions}
+          companyName={companyName}
+          jwtToken={jwtToken}
+        />
+        {companyApplications.length > 0 && (
+          <div ref={spontaneousSectionRef} id="company-spontaneous-section">
+            <Card className="p-6">
+              <h3 className="text-lg font-semibold mb-4">Candidature spontanee</h3>
+              <div className="space-y-3 max-h-80 overflow-y-auto pr-1 text-sm">
+                {companyApplications.map((app) => {
+                  const jd = jobDescriptions.find((j) => j.jd_id === app.jd_id);
+                  return (
+                    <div key={app.id} className="border rounded-lg px-3 py-2 bg-muted/50">
+                      <div className="flex flex-col mb-1">
+                        <span className="font-semibold">Candidato</span>
+                        {app.candidate_name && (
+                          <span className="text-xs text-muted-foreground">{app.candidate_name}</span>
+                        )}
+                      </div>
+                      {jd ? (
+                        <div className="text-xs text-muted-foreground mb-1">
+                          Per la posizione: {jd.title}
+                        </div>
+                      ) : (
+                        <div className="text-xs text-muted-foreground mb-1">
+                          Candidatura spontanea
+                        </div>
+                      )}
+                      <p className="text-xs whitespace-pre-wrap">{app.message}</p>
+                      <div className="mt-2 flex justify-end">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleOpenContactFromApplication(app, jd?.title)}
+                        >
+                          Contatta candidato
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </Card>
+          </div>
+        )}
+        <Dialog
+          open={companyContactDialogOpen}
+          onOpenChange={(open) => {
+            setCompanyContactDialogOpen(open);
+            if (!open) {
+              setCompanyContactTarget(null);
+              setCompanyContactDraft("");
+              setCompanySendingContact(false);
+            }
+          }}
+        >
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Invia un messaggio al candidato</DialogTitle>
+              <DialogDescription>
+                Scrivi un breve messaggio di contatto che il candidato vedrà nella sua inbox.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3 py-2">
+              {companyContactTarget && (
+                <p className="text-xs text-muted-foreground">
+                  Per: <span className="font-semibold">{companyContactTarget.candidateName || "candidato"}</span>
+                  {" · "}
+                  <span className="italic">{companyContactTarget.jdTitle}</span>
+                </p>
+              )}
+              <div className="space-y-2">
+                <Label htmlFor="company-contact-message">Messaggio</Label>
+                <Textarea
+                  id="company-contact-message"
+                  rows={5}
+                  value={companyContactDraft}
+                  onChange={(e) => setCompanyContactDraft(e.target.value)}
+                  placeholder="Presentati brevemente e proponi un eventuale prossimo passo (es. call)."
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setCompanyContactDialogOpen(false);
+                  setCompanyContactTarget(null);
+                  setCompanyContactDraft("");
+                  setCompanySendingContact(false);
+                }}
+              >
+                Annulla
+              </Button>
+              <Button
+                type="button"
+                onClick={handleSendContactFromApplication}
+                disabled={companySendingContact}
+              >
+                {companySendingContact ? "Invio..." : "Invia messaggio"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

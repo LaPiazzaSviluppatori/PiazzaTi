@@ -327,6 +327,8 @@ export const mockFeedback: Feedback[] = [
     message: "Il tuo profilo è molto interessante! Ci piacerebbe conoscerti per una video call conoscitiva.",
     date: "2025-01-12",
     type: "positive",
+    jdTitle: "Senior Frontend Developer",
+    company: "TechCorp Italia",
   },
   {
     id: "f2",
@@ -334,6 +336,8 @@ export const mockFeedback: Feedback[] = [
     message: "Grazie per la candidatura. Al momento stiamo valutando profili con più esperienza in DevOps.",
     date: "2025-01-08",
     type: "constructive",
+    jdTitle: "DevOps Engineer",
+    company: "Startup Innovativa",
   },
   {
     id: "f3",
@@ -341,6 +345,8 @@ export const mockFeedback: Feedback[] = [
     message: "Abbiamo ricevuto la tua application. Ti contatteremo entro 2 settimane.",
     date: "2025-01-05",
     type: "neutral",
+    jdTitle: "UX/UI Designer",
+    company: "Design Studio",
   },
 ];
 
