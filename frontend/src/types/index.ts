@@ -8,6 +8,9 @@ export interface Experience {
   company: string;
   period: string;
   description: string;
+  // Opzionali: informazioni aggiuntive dal parser
+  location?: string;
+  responsibilities?: string[];
 }
 
 export interface Project {

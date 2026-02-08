@@ -238,25 +238,45 @@ const GestisciCandidature: React.FC<GestisciCandidatureProps> = ({
     }
   };
 
-  const handleLoadXaiForCandidate = (jdId: string, candidate: JDMatchCandidate) => {
+  const handleLoadXaiForCandidate = async (jdId: string, candidate: JDMatchCandidate) => {
     const key = `${jdId}:${candidate.user_id}`;
     setXaiError(null);
     setXaiLoadingKey(key);
 
-    const xai = candidate.xai ?? null;
+    try {
+      const response = await fetch("/api/match_cv_jd", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cv_path: candidate.user_id, jd_path: jdId }),
+      });
 
-    if (!xai) {
-      console.warn(
-        "Spiegazione XAI non disponibile per questo candidato nei risultati di matching",
-      );
+      if (!response.ok) {
+        const text = await response.text();
+        console.error("Errore risposta matcher (GestisciCandidature XAI)", text);
+        throw new Error(text || "Errore dal servizio di matching");
+      }
+
+      const result = (await response.json()) as Record<string, unknown>;
+
+      let xai: XAIData | null = null;
+      if (result.candidate && typeof result.candidate === "object") {
+        const cand = result.candidate as Record<string, unknown>;
+        if (cand.xai && typeof cand.xai === "object") {
+          xai = cand.xai as XAIData;
+        }
+      }
+      if (!xai && result.xai && typeof result.xai === "object") {
+        xai = result.xai as XAIData;
+      }
+
+      setXaiByCandidate((prev) => ({ ...prev, [key]: xai }));
+    } catch (err) {
+      console.error("Errore caricamento XAI per candidato (GestisciCandidature)", err);
+      setXaiError("Impossibile caricare la spiegazione del modello per questo candidato.");
       setXaiByCandidate((prev) => ({ ...prev, [key]: null }));
-      setXaiError("Nessuna spiegazione dettagliata disponibile per questo candidato.");
+    } finally {
       setXaiLoadingKey(null);
-      return;
     }
-
-    setXaiByCandidate((prev) => ({ ...prev, [key]: xai }));
-    setXaiLoadingKey(null);
   };
 
   const handleContactCandidate = (candidate: JDMatchCandidate, jdId: string, jdTitle: string) => {
@@ -298,7 +318,7 @@ const GestisciCandidature: React.FC<GestisciCandidatureProps> = ({
       <Card className="p-4 space-y-4">
         <div className="flex items-center justify-between gap-2">
           <div>
-            <h3 className="text-lg font-semibold">Gestisci le tue candidature</h3>
+            <h3 className="text-lg font-semibold">Gestisci le candidature</h3>
             {companyName && (
               <p className="text-xs text-muted-foreground mt-0.5">
                 Azienda: <span className="font-medium">{companyName}</span>

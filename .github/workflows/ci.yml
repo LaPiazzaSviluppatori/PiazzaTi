@@ -291,6 +291,20 @@ jobs:
             echo "[remote] Checking service status"
             docker compose -f docker-compose.yml -f docker-compose.deploy.yml ps
 
+            # Ensure Ollama model is present inside the ollama container
+            MODEL_NAME="${OLLAMA_MODEL_NAME:-llama3.2:3b}"
+            echo "[remote] Ensuring Ollama model ${MODEL_NAME} is present in container"
+            if docker compose -f docker-compose.yml -f docker-compose.deploy.yml ps ollama >/dev/null 2>&1; then
+              if ! docker compose -f docker-compose.yml -f docker-compose.deploy.yml exec -T ollama ollama list 2>/dev/null | grep -q "${MODEL_NAME}"; then
+                echo "[remote] Ollama model ${MODEL_NAME} not found in container, pulling..."
+                docker compose -f docker-compose.yml -f docker-compose.deploy.yml exec -T ollama ollama pull "${MODEL_NAME}"
+              else
+                echo "[remote] Ollama model ${MODEL_NAME} already present in container"
+              fi
+            else
+              echo "[remote] Ollama service not found in compose, skipping model pull"
+            fi
+
             # health check (backend directly)
             max_wait=60
             interval=3

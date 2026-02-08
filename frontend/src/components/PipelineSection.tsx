@@ -65,7 +65,11 @@ interface XAIData {
   evidence?: Record<string, unknown>;
 }
 
-export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode, isParsing, mode = "candidate", onCreateJd, companyName, companyApplications = [], jwtToken }: PipelineSectionExtendedProps) => {
+interface PipelineSectionAllProps extends PipelineSectionExtendedProps {
+  markCompanyAppAsSeen?: (app: CompanyApplication) => void;
+}
+
+export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode, isParsing, mode = "candidate", onCreateJd, companyName, companyApplications = [], jwtToken, markCompanyAppAsSeen }: PipelineSectionAllProps) => {
   const isCompanyMode = mode === "company";
   const spontaneousSectionRef = useRef<HTMLDivElement | null>(null);
 
@@ -80,6 +84,9 @@ export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode
   } | null>(null);
 
   const handleOpenContactFromApplication = (app: CompanyApplication, jdTitle?: string) => {
+    if (markCompanyAppAsSeen) {
+      markCompanyAppAsSeen(app);
+    }
     const effectiveTitle = jdTitle?.trim();
     const defaultMessage = effectiveTitle
       ? `Ciao, abbiamo ricevuto la tua candidatura per la posizione "${effectiveTitle}". Se ti va, possiamo fissare una breve call per conoscerci meglio e raccontarti il ruolo.`
