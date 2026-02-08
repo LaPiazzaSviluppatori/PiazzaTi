@@ -1,3 +1,7 @@
+  // Stub per evitare errori di compilazione
+  const handleLoadXaiForCandidate = (jdId: string, candidate: any) => {
+    toast({ title: "Spiegazione XAI", description: `Stub: JD ${jdId}, candidato ${candidate.user_id}` });
+  };
 import React, { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
