@@ -157,6 +157,31 @@ const Index = () => {
     return saved || null;
   });
 
+  // Se l'utente è un candidato loggato ma non abbiamo ancora nessun candidato in memoria
+  // (es. nuovo device o localStorage pulito), proviamo a ricostruire il profilo
+  // chiedendo al backend l'ultimo CV parsato per lo user_id nel JWT.
+  useEffect(() => {
+    if (authRole !== "candidate" || !jwtToken) return;
+    const userId = decodeJwtUserId(jwtToken);
+    if (!userId) return;
+    const already = candidates.find((c) => c.id === userId);
+    if (already) return;
+
+    (async () => {
+      try {
+        const res = await fetch(`/api/parse/user/${encodeURIComponent(userId)}/cv/latest`);
+        if (!res.ok) return; // Nessun CV salvato per questo utente
+        const data = await res.json();
+        if (!data || !data.parsed_json) return;
+        // Riusa la stessa logica usata dopo il parsing CV per
+        // trasformare parsed_json in Candidate (handleCandidateParsed)
+        handleCandidateParsed(data.parsed_json);
+      } catch {
+        // silenzioso: su device nuovo è opzionale
+      }
+    })();
+  }, [authRole, jwtToken, candidates]);
+
   // Inbox messaggi per candidato (campanella)
   type InboxMessage = {
     id: string;
