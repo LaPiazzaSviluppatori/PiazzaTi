@@ -109,10 +109,17 @@ class CVBatchStorage:
         return cleaned[:50] if cleaned else "cv"
     
     def _prepare_cv_data(self, doc: ParsedDocument, file_info: Dict[str, Any]) -> Dict[str, Any]:
+        """Prepara i dati del CV per il salvataggio in formato compatibile con il modulo NLP.
+
+        Nota importante:
+        - Il campo ``file_sha256`` viene rigenerato a ogni salvataggio, così
+          la pipeline ``cv_json_to_dataset_processor.py`` riconosce correttamente
+          gli aggiornamenti (stesso ``user_id`` ma contenuto diverso) come
+          "UPDATE" invece che "SKIP (SHA duplicato)".
+        - Questo è fondamentale per casi come ``append_user_skills``, dove il
+          contenuto del CV cambia (nuove skill) ma l'ID utente resta lo stesso.
         """
-        Prepara i dati del CV per il salvataggio in formato compatibile con il modulo NLP.
-        """
-        
+
         # Converti il documento in dizionario
         if hasattr(doc, 'model_dump'):
             cv_data = doc.model_dump()
@@ -120,7 +127,7 @@ class CVBatchStorage:
             cv_data = doc.dict()
         else:
             cv_data = doc.__dict__.copy()
-        
+
         # Aggiungi metadati per batch processing
         cv_data.update({
             # Metadati file
@@ -131,14 +138,26 @@ class CVBatchStorage:
                 "ready_for_batch": True
             }
         })
-        
+
         # Assicurati che ci siano gli ID necessari
         if 'document_id' not in cv_data or not cv_data['document_id']:
             cv_data['document_id'] = file_info["document_id"]
-            
+
         if 'user_id' not in cv_data or not cv_data['user_id']:
             cv_data['user_id'] = file_info["user_id"]
-        
+
+        # Rigenera sempre un nuovo SHA256 per questa "versione" del CV.
+        # In questo modo, se il contenuto cambia (es. nuove skill aggiunte),
+        # la pipeline lo vede come file aggiornato anche se proviene dallo
+        # stesso utente.
+        try:
+            sha_source = f"{cv_data.get('user_id','')}|{cv_data.get('document_id','')}|{file_info['timestamp']}"
+            cv_data["file_sha256"] = hashlib.sha256(sha_source.encode("utf-8")).hexdigest()
+        except Exception:
+            # In caso di qualunque problema, generiamo comunque un UUID
+            # così il valore risulta diverso e l'update viene preso in carico.
+            cv_data["file_sha256"] = hashlib.sha256(str(uuid.uuid4()).encode("utf-8")).hexdigest()
+
         return cv_data
     
     def get_batch_stats(self) -> Dict[str, Any]:
