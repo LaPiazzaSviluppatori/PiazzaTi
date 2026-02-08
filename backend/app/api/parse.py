@@ -94,17 +94,36 @@ def _save_parsed_cv_to_db(db: Session, user_id: str, doc_parsed) -> Document:
         return new_doc
 
 
+# Stato in-memory del batch NLP (per polling da frontend)
+_batch_status = {
+    "running": False,
+    "last_started_at": None,
+    "last_completed_at": None,
+    "last_error": None,
+    "last_process_date": None,
+}
+
+
 def _start_batch_process(process_date: str | None = None) -> None:
+    """Avvia il batch NLP per la data specificata e aggiorna lo stato globale.
+
+    - Esegue `cron_scripts/batch_processor.py` in subprocess
+    - Aggiorna `_batch_status` per permettere al frontend di sapere
+      se un batch è in esecuzione e quando è stato completato
     """
-    Avvia lo script `cron_scripts/batch_processor.py` per la data specificata.
-    Se `process_date` è None, usa la data odierna.
-    Funzione pensata per essere eseguita in background (BackgroundTasks).
-    """
+    global _batch_status
+    pd = process_date or datetime.now().strftime("%Y-%m-%d")
+    _batch_status["running"] = True
+    _batch_status["last_started_at"] = time.time()
+    _batch_status["last_process_date"] = pd
+    _batch_status["last_error"] = None
+
     try:
-        pd = process_date or datetime.now().strftime("%Y-%m-%d")
         script_path = Path(__file__).parent.parent.parent / "cron_scripts" / "batch_processor.py"
         if not script_path.exists():
-            logger.error("Batch processor script non trovato: %s", script_path)
+            msg = f"Batch processor script non trovato: {script_path}"
+            logger.error(msg)
+            _batch_status["last_error"] = msg
             return
         cmd = [sys.executable, str(script_path), "--process-date", pd]
         logger.info("Avviando batch processor: %s", " ".join(cmd))
@@ -112,11 +131,17 @@ def _start_batch_process(process_date: str | None = None) -> None:
         logger.info("Batch processor stdout:\n%s", result.stdout)
         logger.info("Batch processor stderr:\n%s", result.stderr)
         if result.returncode != 0:
-            logger.error("Batch processor fallito (code=%d): %s", result.returncode, result.stderr)
+            msg = f"Batch processor fallito (code={result.returncode}): {result.stderr}"
+            logger.error(msg)
+            _batch_status["last_error"] = msg
         else:
             logger.info("Batch processor completato. stdout len=%d", len(result.stdout))
     except Exception as e:
         logger.exception("Errore avviando batch processor: %s", str(e))
+        _batch_status["last_error"] = str(e)
+    finally:
+        _batch_status["running"] = False
+        _batch_status["last_completed_at"] = time.time()
 
 
 @router.post("/upload_db")
@@ -175,96 +200,190 @@ def get_latest_cv(user_id: str, db: Session = Depends(get_db)):
     }
 
 
-@router.post("/user/{user_id}/skills/append")
-def append_user_skills(
+@router.put("/user/{user_id}/skills")
+def replace_user_skills(
     user_id: str,
     payload: SkillUpdateRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    """Aggiunge nuove skill al CV parsato dell'utente e rilancia la pipeline embeddings.
+    """Sostituisce l'intero set di skill del CV parsato dell'utente e rilancia la pipeline.
 
-    - Recupera l'ultimo Document di tipo 'cv' per lo user_id
-    - Converte parsed_json in ParsedDocument
-    - Aggiunge le skill mancanti (case-insensitive)
-    - Salva un nuovo Document is_latest nel DB
-    - Salva il JSON aggiornato su filesystem per il batch NLP
-    - Avvia il batch processor per rigenerare embeddings
+    Questo endpoint è pensato per il flusso con pulsante "Aggiorna" nel frontend:
+
+    - Il frontend mantiene localmente la lista corrente di skill (aggiunte/rimosse)
+    - Al click su "Aggiorna" invia TUTTE le skill desiderate in `payload.skills`
+    - Qui sovrascriviamo completamente `parsed_doc.skills` con questa lista
+    - Salviamo un nuovo Document `is_latest` nel DB
+    - Generiamo un nuovo JSON nella cartella batch `/app/NLP/data/cvs`
+    - Scheduliamo il batch processor per rigenerare embeddings
     """
 
-    if not payload.skills:
-        raise HTTPException(status_code=400, detail="Nessuna skill fornita")
+    if payload.skills is None:
+        raise HTTPException(status_code=400, detail="Lista skill mancante")
 
-    logger.info("[append_user_skills] Request to append skills for user_id=%s skills=%s", user_id, payload.skills)
+    logger.info("[replace_user_skills] Request to replace skills for user_id=%s skills=%s", user_id, payload.skills)
 
-    # NB: Document.user_id è UUID; convertiamo esplicitamente la stringa per evitare mismatch silenziosi
     from uuid import UUID
     try:
         user_uuid = UUID(str(user_id))
     except Exception:
-        logger.error("[append_user_skills] user_id non è un UUID valido: %s", user_id)
+        logger.error("[replace_user_skills] user_id non è un UUID valido: %s", user_id)
         raise HTTPException(status_code=400, detail="user_id non valido")
 
     doc = db.query(Document).filter_by(user_id=user_uuid, type="cv", is_latest=True).first()
     if not doc or not doc.parsed_json:
-        logger.warning("[append_user_skills] Nessun CV is_latest trovato per user_id=%s", user_uuid)
+        logger.warning("[replace_user_skills] Nessun CV is_latest trovato per user_id=%s", user_uuid)
         raise HTTPException(status_code=404, detail="Nessun CV caricato per questo utente")
+
     try:
         parsed_doc = ParsedDocument(**doc.parsed_json)
     except Exception as e:  # pragma: no cover - errore raro di deserializzazione
-        logger.exception("[append_user_skills] Errore ricostruendo ParsedDocument per doc_id=%s: %s", doc.id, e)
+        logger.exception("[replace_user_skills] Errore ricostruendo ParsedDocument per doc_id=%s: %s", doc.id, e)
         raise HTTPException(status_code=500, detail=f"Impossibile ricostruire ParsedDocument: {e}")
 
-    existing_names = {s.name.lower() for s in parsed_doc.skills if s.name}
-    added: list[str] = []
-
+    # Normalizziamo e dedupllichiamo i nomi skill forniti dal frontend
+    cleaned: list[str] = []
+    seen_lower: set[str] = set()
     for raw_name in payload.skills:
         name = (raw_name or "").strip()
         if not name:
             continue
         lower = name.lower()
-        if lower in existing_names:
+        if lower in seen_lower:
             continue
-        parsed_doc.skills.append(ParsedSkill(name=name, source=SkillSource.heuristic, confidence=0.9))
-        existing_names.add(lower)
-        added.append(name)
+        seen_lower.add(lower)
+        cleaned.append(name)
 
-    if not added:
-        logger.info(
-            "[append_user_skills] Nessuna nuova skill aggiunta per user_id=%s (tutte già presenti)",
-            user_uuid,
-        )
-        return {"message": "Nessuna nuova skill aggiunta (già presenti)", "document_id": str(doc.id)}
+    # Sovrascriviamo completamente le skill strutturate con quelle fornite
+    parsed_doc.skills = [
+        ParsedSkill(name=name, source=SkillSource.heuristic, confidence=0.9)
+        for name in cleaned
+    ]
 
     # Salva un nuovo Document come ultimo CV per l'utente
     new_doc = _save_parsed_cv_to_db(db, str(user_uuid), parsed_doc)
 
-    # Salva anche il JSON aggiornato nella cartella batch NLP
+    # Salva anche il JSON aggiornato nella cartella batch NLP (/app/NLP/data/cvs)
     batch_storage = get_batch_storage()
     json_path = batch_storage.save_parsed_cv(parsed_doc, getattr(parsed_doc, "file_name", None))
     logger.info(
-        "[append_user_skills] Salvato JSON batch per user_id=%s doc_id=%s path=%s added_skills=%s",
+        "[replace_user_skills] Salvato JSON batch per user_id=%s doc_id=%s path=%s skills_count=%s",
         user_uuid,
         getattr(parsed_doc, "document_id", None) or str(new_doc.id if new_doc else doc.id),
         json_path,
-        added,
+        len(cleaned),
     )
 
     # Avvia pipeline batch (embeddings) per la data odierna
     try:
         if background_tasks is not None:
             process_date = datetime.now().strftime("%Y-%m-%d")
-            logger.info("[append_user_skills] Scheduling batch process for date %s (skills append)", process_date)
+            logger.info("[replace_user_skills] Scheduling batch process for date %s (full skills replace)", process_date)
             background_tasks.add_task(_start_batch_process, process_date)
         else:
-            logger.warning("[append_user_skills] background_tasks è None, batch non schedulato")
+            logger.warning("[replace_user_skills] background_tasks è None, batch non schedulato")
     except Exception as e:  # pragma: no cover - errore non critico
-        logger.exception("[append_user_skills] Impossibile schedulare batch automatico dopo append skill: %s", str(e))
+        logger.exception("[replace_user_skills] Impossibile schedulare batch automatico dopo replace skill: %s", str(e))
 
     return {
-        "message": "Skill aggiornate e pipeline embeddings avviata",
+        "message": "Skill sostituite e pipeline embeddings avviata",
         "document_id": str(new_doc.id) if new_doc else str(doc.id),
-        "added_skills": added,
+        "skills": cleaned,
+        "json_path": json_path,
+    }
+
+
+@router.put("/user/{user_id}/skills")
+def replace_user_skills(
+    user_id: str,
+    payload: SkillUpdateRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """Sostituisce l'intero set di skill del CV parsato dell'utente e rilancia la pipeline.
+
+    Questo endpoint è pensato per il flusso con pulsante "Aggiorna" nel frontend:
+
+    - Il frontend mantiene localmente la lista corrente di skill (aggiunte/rimosse)
+    - Al click su "Aggiorna" invia TUTTE le skill desiderate in `payload.skills`
+    - Qui sovrascriviamo completamente `parsed_doc.skills` con questa lista
+    - Salviamo un nuovo Document `is_latest` nel DB
+    - Generiamo un nuovo JSON nella cartella batch `/app/NLP/data/cvs`
+    - Scheduliamo il batch processor per rigenerare embeddings
+    """
+
+    if payload.skills is None:
+        raise HTTPException(status_code=400, detail="Lista skill mancante")
+
+    logger.info("[replace_user_skills] Request to replace skills for user_id=%s skills=%s", user_id, payload.skills)
+
+    from uuid import UUID
+    try:
+        user_uuid = UUID(str(user_id))
+    except Exception:
+        logger.error("[replace_user_skills] user_id non è un UUID valido: %s", user_id)
+        raise HTTPException(status_code=400, detail="user_id non valido")
+
+    doc = db.query(Document).filter_by(user_id=user_uuid, type="cv", is_latest=True).first()
+    if not doc or not doc.parsed_json:
+        logger.warning("[replace_user_skills] Nessun CV is_latest trovato per user_id=%s", user_uuid)
+        raise HTTPException(status_code=404, detail="Nessun CV caricato per questo utente")
+
+    try:
+        parsed_doc = ParsedDocument(**doc.parsed_json)
+    except Exception as e:  # pragma: no cover - errore raro di deserializzazione
+        logger.exception("[replace_user_skills] Errore ricostruendo ParsedDocument per doc_id=%s: %s", doc.id, e)
+        raise HTTPException(status_code=500, detail=f"Impossibile ricostruire ParsedDocument: {e}")
+
+    # Normalizziamo e dedupllichiamo i nomi skill forniti dal frontend
+    cleaned: list[str] = []
+    seen_lower: set[str] = set()
+    for raw_name in payload.skills:
+        name = (raw_name or "").strip()
+        if not name:
+            continue
+        lower = name.lower()
+        if lower in seen_lower:
+            continue
+        seen_lower.add(lower)
+        cleaned.append(name)
+
+    # Sovrascriviamo completamente le skill strutturate con quelle fornite
+    parsed_doc.skills = [
+        ParsedSkill(name=name, source=SkillSource.heuristic, confidence=0.9)
+        for name in cleaned
+    ]
+
+    # Salva un nuovo Document come ultimo CV per l'utente
+    new_doc = _save_parsed_cv_to_db(db, str(user_uuid), parsed_doc)
+
+    # Salva anche il JSON aggiornato nella cartella batch NLP (/app/NLP/data/cvs)
+    batch_storage = get_batch_storage()
+    json_path = batch_storage.save_parsed_cv(parsed_doc, getattr(parsed_doc, "file_name", None))
+    logger.info(
+        "[replace_user_skills] Salvato JSON batch per user_id=%s doc_id=%s path=%s skills_count=%s",
+        user_uuid,
+        getattr(parsed_doc, "document_id", None) or str(new_doc.id if new_doc else doc.id),
+        json_path,
+        len(cleaned),
+    )
+
+    # Avvia pipeline batch (embeddings) per la data odierna
+    try:
+        if background_tasks is not None:
+            process_date = datetime.now().strftime("%Y-%m-%d")
+            logger.info("[replace_user_skills] Scheduling batch process for date %s (full skills replace)", process_date)
+            background_tasks.add_task(_start_batch_process, process_date)
+        else:
+            logger.warning("[replace_user_skills] background_tasks è None, batch non schedulato")
+    except Exception as e:  # pragma: no cover - errore non critico
+        logger.exception("[replace_user_skills] Impossibile schedulare batch automatico dopo replace skill: %s", str(e))
+
+    return {
+        "message": "Skill sostituite e pipeline embeddings avviata",
+        "document_id": str(new_doc.id) if new_doc else str(doc.id),
+        "skills": cleaned,
         "json_path": json_path,
     }
 
@@ -377,7 +496,8 @@ async def get_batch_stats():
         "batch_processing": {
             "enabled": True,
             "storage_path": str(batch_storage.base_path),
-            **stats
+            **stats,
+            "batch_status": _batch_status,
         }
     }
 

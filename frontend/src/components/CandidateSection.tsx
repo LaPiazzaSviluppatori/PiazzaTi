@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { CustomSkeleton } from "./CustomSkeleton";
 import "./custom-skeleton.css";
 import { Card } from "@/components/ui/card";
@@ -117,6 +117,7 @@ export const CandidateSection = ({
     }));
   }, [candidate.skills, candidate.optInTags]);
   const [newSkill, setNewSkill] = useState("");
+  const [skillsUpdating, setSkillsUpdating] = useState(false);
   // Rimozione skill: chiama il parent
   const handleRemoveSkill = (skillName: string) => {
     onRemoveSkill(skillName);
@@ -165,6 +166,40 @@ export const CandidateSection = ({
 
   // Candidate Login Modal state
 
+  // Polling dello stato batch NLP per tenere lo shimmer attivo finché la pipeline non è conclusa
+  const pollBatchUntilComplete = (startedAtSec: number, attemptsLeft: number = 40) => {
+    if (attemptsLeft <= 0) {
+      setSkillsUpdating(false);
+      return;
+    }
+
+    setTimeout(async () => {
+      try {
+        const resp = await fetch("/api/parse/batch/stats");
+        if (!resp.ok) {
+          // Se non riusciamo a leggere lo stato, riproviamo ancora qualche volta
+          pollBatchUntilComplete(startedAtSec, attemptsLeft - 1);
+          return;
+        }
+        const data = await resp.json();
+        const status = data?.batch_processing?.batch_status;
+        const running = !!status?.running;
+        const lastCompletedAt = typeof status?.last_completed_at === "number" ? status.last_completed_at : 0;
+
+        if (!running && lastCompletedAt && lastCompletedAt >= startedAtSec) {
+          // Batch concluso dopo il nostro "Aggiorna": possiamo togliere lo shimmer
+          setSkillsUpdating(false);
+        } else {
+          // Ancora in corso (o completato prima): continuiamo a pollare
+          pollBatchUntilComplete(startedAtSec, attemptsLeft - 1);
+        }
+      } catch {
+        // In caso di errore rete, riproviamo finché abbiamo tentativi
+        pollBatchUntilComplete(startedAtSec, attemptsLeft - 1);
+      }
+    }, 3000);
+  };
+
   const handleAddSkill = async () => {
     const skillName = newSkill.trim();
     if (!skillName) return;
@@ -185,32 +220,52 @@ export const CandidateSection = ({
     onAddSkill(skillName);
     setNewSkill("");
     toast({ title: "Skill aggiunta", description: `"${skillName}" aggiunta al profilo` });
+  };
 
-    // Se abbiamo uno user_id backend, aggiorna anche il JSON del CV e gli embeddings
-    if (user_id) {
-      try {
-        const resp = await fetch(`/api/parse/user/${user_id}/skills/append`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ skills: [skillName] }),
-        });
-        if (!resp.ok) {
-          const err = await resp.json().catch(() => ({}));
-          console.error("Errore aggiornamento skills/embeddings", err);
-          toast({
-            title: "Errore aggiornamento profilo",
-            description: err.detail || resp.statusText,
-            variant: "destructive",
-          });
-        }
-      } catch (e) {
-        console.error("Errore rete aggiornamento skills/embeddings", e);
+  const handleSyncSkillsWithBackend = async () => {
+    if (!user_id) {
+      toast({
+        title: "Impossibile aggiornare",
+        description: "Per aggiornare le skill serve uno user_id backend.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const skillNames = (candidateData.skills || []).map(s => (s.name || "").trim()).filter(Boolean);
+    const startedAtSec = Date.now() / 1000;
+    setSkillsUpdating(true);
+    try {
+      const resp = await fetch(`/api/parse/user/${user_id}/skills`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ skills: skillNames }),
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        console.error("Errore aggiornamento skills/embeddings", err);
         toast({
-          title: "Errore di rete",
-          description: String(e),
+          title: "Errore aggiornamento skill",
+          description: err.detail || resp.statusText,
           variant: "destructive",
         });
+        setSkillsUpdating(false);
+      } else {
+        toast({
+          title: "Skill aggiornate",
+          description: "Le tue competenze sono state sincronizzate e la pipeline NLP è stata rilanciata.",
+        });
+        // Ora attendiamo che il batch NLP completi davvero prima di togliere lo shimmer
+        pollBatchUntilComplete(startedAtSec);
       }
+    } catch (e) {
+      console.error("Errore rete aggiornamento skills/embeddings", e);
+      toast({
+        title: "Errore di rete",
+        description: String(e),
+        variant: "destructive",
+      });
+      setSkillsUpdating(false);
     }
   };
 
@@ -388,7 +443,7 @@ export const CandidateSection = ({
         </div>
 
         {/* Skills */}
-        <Card className={`p-6 ${isParsing && progressPct < 100 ? 'yt-shimmer' : ''}`}>
+        <Card className={`p-6 ${(isParsing && progressPct < 100) || skillsUpdating ? 'yt-shimmer' : ''}`}>
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold flex items-center gap-2">
               <Award className="h-5 w-5 text-primary" />
@@ -417,7 +472,7 @@ export const CandidateSection = ({
               ))
             )}
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 mt-2">
             <Input
               placeholder="Nuova skill..."
               value={newSkill}
@@ -426,6 +481,9 @@ export const CandidateSection = ({
             />
             <Button onClick={handleAddSkill}>
               <Plus className="h-4 w-4" />
+            </Button>
+            <Button variant="outline" onClick={handleSyncSkillsWithBackend} disabled={skillsUpdating}>
+              Aggiorna
             </Button>
           </div>
         </Card>
