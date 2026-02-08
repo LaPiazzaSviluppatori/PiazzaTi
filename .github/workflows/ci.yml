@@ -215,10 +215,10 @@ jobs:
             git reset --hard origin/main
 
             # Ensure runtime data directories have correct ownership/permissions
-            # so the backend container (user "piazzati") can write datasets/embeddings
+            # so the backend container (user "piazzati") can write datasets/embeddings/match results
             cd ${REPO_DIR}
-            chown -R piazzati:systemd-journal NLP/embeddings backend/Dataset || true
-            chmod -R 775 NLP/embeddings backend/Dataset || true
+            chown -R piazzati:systemd-journal NLP/embeddings NLP/match_results backend/Dataset || true
+            chmod -R 775 NLP/embeddings NLP/match_results backend/Dataset || true
             # Ontology file lives under NLP/Dataset and must be writable for updates
             if [ -f NLP/Dataset/skill_ontology.json ]; then
               chown piazzati:systemd-journal NLP/Dataset/skill_ontology.json || true
@@ -281,6 +281,11 @@ jobs:
             echo "[remote] Building and starting all services"
             docker compose -f docker-compose.yml -f docker-compose.deploy.yml build --no-cache piazzati-frontend || true
             docker compose -f docker-compose.yml -f docker-compose.deploy.yml up -d || true
+
+            # Ensure all services (including nginx) are restarted so DNS for
+            # service names like piazzati-frontend is refreshed after deploy
+            echo "[remote] Restarting all compose services to refresh upstreams"
+            docker compose -f docker-compose.yml -f docker-compose.deploy.yml restart || true
             
             # Verify critical services are running
             echo "[remote] Checking service status"

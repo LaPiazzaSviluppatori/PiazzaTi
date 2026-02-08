@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useRef } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -13,7 +13,7 @@ import {
   DialogDescription,
   DialogClose,
 } from "@/components/ui/dialog";
-import { Briefcase, TrendingUp } from "lucide-react";
+import { Briefcase, TrendingUp, Bell } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { AuditLogEntry, Candidate, JobDescription } from "@/types";
 import GestisciCandidature from "./GestisciCandidature";
@@ -48,20 +48,119 @@ interface PipelineSectionExtendedProps extends PipelineSectionProps {
 
 export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode, isParsing, mode = "candidate", onCreateJd, companyName, companyApplications = [], jwtToken }: PipelineSectionExtendedProps) => {
   const isCompanyMode = mode === "company";
+  const spontaneousSectionRef = useRef<HTMLDivElement | null>(null);
+
+  const [companyContactDialogOpen, setCompanyContactDialogOpen] = useState(false);
+  const [companyContactDraft, setCompanyContactDraft] = useState("");
+  const [companySendingContact, setCompanySendingContact] = useState(false);
+  const [companyContactTarget, setCompanyContactTarget] = useState<{
+    candidateUserId: string;
+    jdId: string;
+    jdTitle: string;
+    candidateEmail?: string | null;
+  } | null>(null);
+
+  const handleOpenContactFromApplication = (app: CompanyApplication, jdTitle?: string) => {
+    const effectiveTitle = jdTitle || "candidatura spontanea";
+    const defaultMessage = `Ciao, stiamo valutando la tua ${effectiveTitle}. Se ti va, possiamo fissare una breve call per conoscerci meglio e raccontarti il ruolo.`;
+    setCompanyContactTarget({
+      candidateUserId: app.candidate_user_id,
+      jdId: app.jd_id,
+      jdTitle: effectiveTitle,
+      candidateEmail: app.candidate_email ?? undefined,
+    });
+    setCompanyContactDraft(defaultMessage);
+    setCompanyContactDialogOpen(true);
+  };
+
+  const handleSendContactFromApplication = async () => {
+    if (!companyContactTarget) return;
+    const message = companyContactDraft.trim();
+    if (!message) {
+      toast({
+        title: "Messaggio vuoto",
+        description: "Scrivi un breve messaggio prima di inviare.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setCompanySendingContact(true);
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (jwtToken) {
+        headers["Authorization"] = `Bearer ${jwtToken}`;
+      }
+      const res = await fetch("/api/contact/candidate", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          jd_id: companyContactTarget.jdId,
+          candidate_id: companyContactTarget.candidateUserId,
+          message,
+        }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "Errore dal server");
+      }
+      toast({
+        title: "Messaggio inviato",
+        description: "Il candidato riceverà il tuo messaggio nella sua inbox.",
+      });
+      setCompanyContactDialogOpen(false);
+      setCompanyContactTarget(null);
+      setCompanyContactDraft("");
+    } catch (err) {
+      console.error("Errore invio messaggio al candidato (applications)", err);
+      toast({
+        title: "Errore invio messaggio",
+        description: "Non è stato possibile inviare il messaggio. Riprova più tardi.",
+        variant: "destructive",
+      });
+    } finally {
+      setCompanySendingContact(false);
+    }
+  };
+
+  const handleGoToSpontaneousApplications = () => {
+    if (spontaneousSectionRef.current) {
+      spontaneousSectionRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
 
   // Vista COMPANY: solo gestione JD + Top 20 candidati
   if (isCompanyMode) {
     return (
       <div className="space-y-6">
+        {companyApplications.length > 0 && (
+          <div className="flex justify-end">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="flex items-center gap-2"
+              onClick={handleGoToSpontaneousApplications}
+            >
+              <Bell className="h-4 w-4 text-amber-500" />
+              <span className="text-xs">
+                {companyApplications.length === 1
+                  ? "1 nuova candidatura spontanea"
+                  : `${companyApplications.length} candidature spontanee`}
+              </span>
+            </Button>
+          </div>
+        )}
         <GestisciCandidature
           onCreateJd={onCreateJd}
           jobDescriptions={jobDescriptions}
           companyName={companyName}
+          jwtToken={jwtToken}
         />
         {companyApplications.length > 0 && (
-          <Card className="p-6">
-            <h3 className="text-lg font-semibold mb-4">Candidature ricevute</h3>
-            <div className="space-y-3 max-h-80 overflow-y-auto pr-1 text-sm">
+          <div ref={spontaneousSectionRef}>
+            <Card className="p-6">
+              <h3 className="text-lg font-semibold mb-4">Candidature spontanee</h3>
+              <div className="space-y-3 max-h-80 overflow-y-auto pr-1 text-sm">
               {companyApplications.map((app) => {
                 const jd = jobDescriptions.find((j) => j.jd_id === app.jd_id);
                 return (
@@ -72,18 +171,92 @@ export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode
                         <span className="text-xs text-muted-foreground">{app.candidate_email}</span>
                       )}
                     </div>
-                    {jd && (
+                    {jd ? (
                       <div className="text-xs text-muted-foreground mb-1">
                         Per la posizione: {jd.title}
                       </div>
+                    ) : (
+                      <div className="text-xs text-muted-foreground mb-1">
+                        Candidatura spontanea
+                      </div>
                     )}
                     <p className="text-xs whitespace-pre-wrap">{app.message}</p>
+                    <div className="mt-2 flex justify-end">
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        onClick={() => handleOpenContactFromApplication(app, jd?.title)}
+                      >
+                        Contatta candidato
+                      </Button>
+                    </div>
                   </div>
                 );
               })}
-            </div>
-          </Card>
+              </div>
+            </Card>
+          </div>
         )}
+        <Dialog
+          open={companyContactDialogOpen}
+          onOpenChange={(open) => {
+            setCompanyContactDialogOpen(open);
+            if (!open) {
+              setCompanyContactTarget(null);
+              setCompanyContactDraft("");
+              setCompanySendingContact(false);
+            }
+          }}
+        >
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Invia un messaggio al candidato</DialogTitle>
+              <DialogDescription>
+                Scrivi un breve messaggio di contatto che il candidato vedrà nella sua inbox.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3 py-2">
+              {companyContactTarget && (
+                <p className="text-xs text-muted-foreground">
+                  Per: <span className="font-semibold">{companyContactTarget.candidateEmail || "candidato"}</span>
+                  {" · "}
+                  <span className="italic">{companyContactTarget.jdTitle}</span>
+                </p>
+              )}
+              <div className="space-y-2">
+                <Label htmlFor="company-contact-message">Messaggio</Label>
+                <Textarea
+                  id="company-contact-message"
+                  rows={5}
+                  value={companyContactDraft}
+                  onChange={(e) => setCompanyContactDraft(e.target.value)}
+                  placeholder="Presentati brevemente e proponi un eventuale prossimo passo (es. call)."
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setCompanyContactDialogOpen(false);
+                  setCompanyContactTarget(null);
+                  setCompanyContactDraft("");
+                  setCompanySendingContact(false);
+                }}
+              >
+                Annulla
+              </Button>
+              <Button
+                type="button"
+                onClick={handleSendContactFromApplication}
+                disabled={companySendingContact}
+              >
+                {companySendingContact ? "Invio..." : "Invia messaggio"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     );
   }

@@ -22,6 +22,7 @@ interface GestisciCandidatureProps {
   onCreateJd?: (jd: Omit<JobDescription, "id" | "createdAt">) => void;
   jobDescriptions: JobDescription[];
   companyName?: string | null;
+  jwtToken?: string | null;
 }
 
 interface XAIReason {
@@ -43,7 +44,7 @@ interface XAIData {
   evidence?: Record<string, unknown>;
 }
 
-const GestisciCandidature: React.FC<GestisciCandidatureProps> = ({ onCreateJd, jobDescriptions, companyName }) => {
+const GestisciCandidature: React.FC<GestisciCandidatureProps> = ({ onCreateJd, jobDescriptions, companyName, jwtToken }) => {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [jdForm, setJdForm] = useState({
     title: "",
@@ -300,9 +301,14 @@ const GestisciCandidature: React.FC<GestisciCandidatureProps> = ({ onCreateJd, j
     }
 
     try {
+      const headers: HeadersInit = { "Content-Type": "application/json" };
+      if (jwtToken) {
+        headers["Authorization"] = `Bearer ${jwtToken}`;
+      }
+
       const res = await fetch("/api/contact/candidate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           jd_id: contactTarget.jdId,
           candidate_id: contactTarget.candidate.user_id,
