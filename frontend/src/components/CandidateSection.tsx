@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { CustomSkeleton } from "./CustomSkeleton";
 import "./custom-skeleton.css";
 import { Card } from "@/components/ui/card";
@@ -189,43 +189,55 @@ export const CandidateSection = ({
 
   const [candidateApplications, setCandidateApplications] = useState<CandidateApplication[]>([]);
 
+  const loadInbox = useCallback(async () => {
+    if (!user_id) return;
+    setLoadingInbox(true);
+    setInboxError(null);
+    try {
+      const headers: Record<string, string> = {};
+      if (jwtToken) {
+        headers["Authorization"] = `Bearer ${jwtToken}`;
+      }
+      const [inboxRes, appsRes] = await Promise.all([
+        fetch("/api/contact/inbox", { headers }),
+        fetch("/api/contact/my_applications", { headers }),
+      ]);
+
+      if (!inboxRes.ok) {
+        const text = await inboxRes.text().catch(() => "");
+        throw new Error(text || "Errore dal server inbox");
+      }
+      if (!appsRes.ok) {
+        const text = await appsRes.text().catch(() => "");
+        throw new Error(text || "Errore dal server candidature");
+      }
+
+      const inboxData = (await inboxRes.json()) as InboxMessage[];
+      const appsData = (await appsRes.json()) as CandidateApplication[];
+      setInboxMessages(inboxData);
+      setCandidateApplications(appsData);
+    } catch (err) {
+      console.error("Errore caricamento inbox candidato", err);
+      setInboxError("Non è stato possibile caricare i messaggi dalle aziende.");
+    } finally {
+      setLoadingInbox(false);
+    }
+  }, [user_id, jwtToken]);
+
+  // Caricamento iniziale inbox + candidature
   useEffect(() => {
     if (!user_id) return;
-    const loadInbox = async () => {
-      setLoadingInbox(true);
-      setInboxError(null);
-      try {
-        const headers: Record<string, string> = {};
-        if (jwtToken) {
-          headers["Authorization"] = `Bearer ${jwtToken}`;
-        }
-        const [inboxRes, appsRes] = await Promise.all([
-          fetch("/api/contact/inbox", { headers }),
-          fetch("/api/contact/my_applications", { headers }),
-        ]);
-
-        if (!inboxRes.ok) {
-          const text = await inboxRes.text().catch(() => "");
-          throw new Error(text || "Errore dal server inbox");
-        }
-        if (!appsRes.ok) {
-          const text = await appsRes.text().catch(() => "");
-          throw new Error(text || "Errore dal server candidature");
-        }
-
-        const inboxData = (await inboxRes.json()) as InboxMessage[];
-        const appsData = (await appsRes.json()) as CandidateApplication[];
-        setInboxMessages(inboxData);
-        setCandidateApplications(appsData);
-      } catch (err) {
-        console.error("Errore caricamento inbox candidato", err);
-        setInboxError("Non è stato possibile caricare i messaggi dalle aziende.");
-      } finally {
-        setLoadingInbox(false);
-      }
-    };
     loadInbox();
-  }, [user_id, jwtToken]);
+  }, [user_id, loadInbox]);
+
+  // Aggiornamento periodico dei messaggi dalle aziende mentre sei nella CandidateSection
+  useEffect(() => {
+    if (!user_id) return;
+    const interval = setInterval(() => {
+      loadInbox();
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [user_id, loadInbox]);
 
   const handleAddSkill = async () => {
     const skillName = newSkill.trim();

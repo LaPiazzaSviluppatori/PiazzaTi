@@ -340,7 +340,7 @@ const Index = () => {
     if (authRole !== "candidate" || !jwtToken || !openConversationJdId) return;
     const interval = setInterval(() => {
       fetchConversation(openConversationJdId);
-    }, 5000);
+    }, 2000);
     return () => clearInterval(interval);
   }, [authRole, jwtToken, openConversationJdId, fetchConversation]);
 
@@ -349,7 +349,7 @@ const Index = () => {
     if (authRole !== "company" || !jwtToken || !openCompanyConversation) return;
     const interval = setInterval(() => {
       fetchCompanyConversation(openCompanyConversation.jdId, openCompanyConversation.candidateId);
-    }, 5000);
+    }, 2000);
     return () => clearInterval(interval);
   }, [authRole, jwtToken, openCompanyConversation, fetchCompanyConversation]);
 
@@ -1295,7 +1295,9 @@ const Index = () => {
                       jd_id: openCompanyConversation.jdId,
                       candidate_id: openCompanyConversation.candidateId,
                       message: text,
-                      origin: "top20",
+                      // Continuazione di una conversazione, non per forza Top20;
+                      // la classificazione in CandidateSection usa anche le candidature spontanee.
+                      origin: "spontaneous",
                     }),
                   });
                   if (!res.ok) {
