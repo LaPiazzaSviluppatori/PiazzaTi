@@ -13,7 +13,7 @@ import {
   DialogDescription,
   DialogClose,
 } from "@/components/ui/dialog";
-import { Briefcase, TrendingUp, Bell } from "lucide-react";
+import { Briefcase, TrendingUp } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { AuditLogEntry, Candidate, JobDescription } from "@/types";
 import GestisciCandidature from "./GestisciCandidature";
@@ -133,23 +133,6 @@ export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode
   if (isCompanyMode) {
     return (
       <div className="space-y-6">
-        {companyApplications.length > 0 && (
-          <div className="flex justify-end">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="flex items-center gap-2"
-              onClick={handleGoToSpontaneousApplications}
-            >
-              <Bell className="h-4 w-4 text-amber-500" />
-              <span className="text-xs">
-                {companyApplications.length === 1
-                  ? "1 nuova candidatura spontanea"
-                  : `${companyApplications.length} candidature spontanee`}
-              </span>
-            </Button>
-          </div>
-        )}
         <GestisciCandidature
           onCreateJd={onCreateJd}
           jobDescriptions={jobDescriptions}
@@ -157,7 +140,7 @@ export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode
           jwtToken={jwtToken}
         />
         {companyApplications.length > 0 && (
-          <div ref={spontaneousSectionRef}>
+          <div ref={spontaneousSectionRef} id="company-spontaneous-section">
             <Card className="p-6">
               <h3 className="text-lg font-semibold mb-4">Candidature spontanee</h3>
               <div className="space-y-3 max-h-80 overflow-y-auto pr-1 text-sm">
@@ -167,8 +150,8 @@ export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode
                   <div key={app.id} className="border rounded-lg px-3 py-2 bg-muted/50">
                     <div className="flex flex-col mb-1">
                       <span className="font-semibold">Candidato</span>
-                      {app.candidate_email && (
-                        <span className="text-xs text-muted-foreground">{app.candidate_email}</span>
+                      {app.candidate_name && (
+                        <span className="text-xs text-muted-foreground">{app.candidate_name}</span>
                       )}
                     </div>
                     {jd ? (
@@ -357,7 +340,24 @@ export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cv_path: activeCandidate.id, jd_path: jdId }),
       });
-      if (!response.ok) throw new Error(await response.text());
+      if (!response.ok) {
+        let description = "Si è verificato un problema durante il calcolo.";
+        try {
+          const data = await response.json();
+          if (data && typeof data === "object" && "detail" in data) {
+            description = String((data as { detail?: unknown }).detail ?? description);
+          }
+        } catch {
+          const text = await response.text();
+          if (text) description = text;
+        }
+        toast({
+          title: "Errore match",
+          description,
+          variant: "destructive",
+        });
+        return;
+      }
       const result = await response.json();
       const rawScore = extractScore(result);
       const score = rawScore !== null ? Math.round(rawScore * 100) : 0;
@@ -366,7 +366,7 @@ export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode
       console.error("Errore match (PipelineSection)", err);
       toast({
         title: "Errore match",
-        description: "Si è verificato un problema durante il calcolo.",
+        description: "Si è verificato un problema di rete durante il calcolo.",
         variant: "destructive",
       });
     } finally {

@@ -745,16 +745,23 @@ const Index = () => {
             localStorage.removeItem("piazzati:jwtToken");
             toast({ title: "Logout eseguito", description: "Sei tornato alla pagina di login" });
           }}
-          showInbox={authRole === "candidate"}
-          inboxCount={inboxMessages.length}
-          hasUnreadInbox={hasUnreadInbox}
+          showInbox={true}
+          inboxCount={authRole === "candidate" ? inboxMessages.length : companyApplications.length}
+          hasUnreadInbox={hasUnreadInbox || (authRole === "company" && companyApplications.length > 0)}
           onToggleInbox={async () => {
-            if (!inboxOpen) {
-              await fetchInbox();
-            }
-            setInboxOpen((prev) => !prev);
-            if (!inboxOpen) {
-              setHasUnreadInbox(false);
+            if (authRole === "candidate") {
+              if (!inboxOpen) {
+                await fetchInbox();
+              }
+              setInboxOpen((prev) => !prev);
+              if (!inboxOpen) {
+                setHasUnreadInbox(false);
+              }
+            } else if (authRole === "company") {
+              const el = document.getElementById("company-spontaneous-section");
+              if (el) {
+                el.scrollIntoView({ behavior: "smooth", block: "start" });
+              }
             }
           }}
         />
@@ -790,6 +797,47 @@ const Index = () => {
                 )}
                 <p className="text-[11px] whitespace-pre-wrap">{msg.message}</p>
               </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Inbox azienda: candidature spontanee */}
+      {authRole === "company" && companyApplications.length > 0 && (
+        <div className="fixed top-16 right-4 z-40 w-80 max-h-[60vh] overflow-y-auto bg-white/95 shadow-lg rounded-lg border p-3 space-y-3">
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="text-sm font-semibold">Candidature spontanee</h2>
+          </div>
+          {companyApplications.map((app) => {
+            const jd = jobDescriptions.find((j) => j.jd_id === app.jd_id);
+            return (
+              <button
+                key={app.id}
+                type="button"
+                className="w-full text-left border rounded-md px-2 py-2 text-xs bg-muted/60 hover:bg-muted"
+                onClick={() => {
+                  const anchor = document.getElementById("company-spontaneous-section");
+                  if (anchor) {
+                    anchor.scrollIntoView({ behavior: "smooth", block: "start" });
+                  }
+                }}
+              >
+                <div className="flex flex-col mb-1">
+                  <span className="font-semibold text-pink-900">
+                    {app.candidate_name || "Candidato"}
+                  </span>
+                </div>
+                {jd ? (
+                  <div className="text-[11px] text-muted-foreground mb-1">
+                    Per la posizione: {jd.title}
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-muted-foreground mb-1">
+                    Candidatura spontanea
+                  </div>
+                )}
+                <p className="text-[11px] line-clamp-2 whitespace-pre-wrap">{app.message}</p>
+              </button>
             );
           })}
         </div>

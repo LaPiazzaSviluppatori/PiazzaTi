@@ -305,6 +305,14 @@ jobs:
               waited=$((waited + interval))
             done
 
+            echo "[remote] Running NLP CV pipeline (--process-all) inside backend container"
+            docker compose -f docker-compose.yml -f docker-compose.deploy.yml exec piazzati-backend \
+              python cron_scripts/batch_processor.py --process-all || true
+
+            echo "[remote] Running NLP JD pipeline (--process-jd) inside backend container"
+            docker compose -f docker-compose.yml -f docker-compose.deploy.yml exec piazzati-backend \
+              python cron_scripts/batch_processor.py --process-jd || true
+
             # record deployed tag atomically AFTER success
             mkdir -p /var/lib/piazzati
             if printf '%s' "$IMAGE_FULL" | grep -q ':'; then

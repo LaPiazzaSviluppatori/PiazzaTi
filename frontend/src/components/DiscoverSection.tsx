@@ -127,7 +127,24 @@ export const DiscoverSection = ({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cv_path: activeCandidate.id, jd_path: jdId }),
       });
-      if (!response.ok) throw new Error(await response.text());
+      if (!response.ok) {
+        let description = "Si è verificato un problema durante il calcolo.";
+        try {
+          const data = await response.json();
+          if (data && typeof data === "object" && "detail" in data) {
+            description = String((data as { detail?: unknown }).detail ?? description);
+          }
+        } catch {
+          const text = await response.text();
+          if (text) description = text;
+        }
+        toast({
+          title: "Errore match",
+          description,
+          variant: "destructive",
+        });
+        return;
+      }
       const result = await response.json();
       const rawScore = extractScore(result);
       const score = rawScore !== null ? Math.round(rawScore * 100) : 0;
@@ -136,7 +153,7 @@ export const DiscoverSection = ({
       console.error("Errore match (CalcolaMatch)", err);
       toast({
         title: "Errore match",
-        description: "Si è verificato un problema durante il calcolo.",
+        description: "Si è verificato un problema di rete durante il calcolo.",
         variant: "destructive",
       });
     } finally {
