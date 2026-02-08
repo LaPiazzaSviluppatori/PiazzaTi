@@ -64,6 +64,17 @@ class InboxMessage(BaseModel):
     from_name: Optional[str] = None
 
 
+class ConversationMessage(BaseModel):
+    id: str
+    timestamp: str
+    jd_id: str
+    candidate_id: str
+    message: str
+    from_role: Optional[str] = None
+    from_company: Optional[str] = None
+    from_name: Optional[str] = None
+
+
 @router.get("/contact/inbox", response_model=List[InboxMessage])
 async def get_inbox(
     current_user: User = Depends(get_current_user),
@@ -132,6 +143,72 @@ async def get_inbox(
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Errore lettura inbox: {e}")
+
+
+@router.get("/contact/conversation", response_model=List[ConversationMessage])
+async def get_conversation(
+    jd_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Restituisce la conversazione completa per una coppia (candidate, JD).
+
+    Usa lo stesso file JSONL dei messaggi di contatto e restituisce sia i
+    messaggi inviati dall'azienda sia le eventuali risposte del candidato.
+    """
+
+    base_dir = Path("/app/data")
+    log_path = base_dir / "contact_messages.jsonl"
+
+    if not log_path.exists():
+        return []
+
+    try:
+        raw_entries: List[Dict[str, Any]] = []
+        with log_path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    raw = json.loads(line)
+                    raw_entries.append(raw)
+                except json.JSONDecodeError:
+                    continue
+
+        cid = str(current_user.id)
+        # Filtra tutti i messaggi per questo candidato e JD
+        entries = [
+            e
+            for e in raw_entries
+            if str(e.get("candidate_id")) == cid and str(e.get("jd_id")) == jd_id
+        ]
+
+        def parse_ts(ts: str) -> float:
+            try:
+                return datetime.fromisoformat(ts).timestamp()
+            except Exception:
+                return 0.0
+
+        # Ordine cronologico crescente per visualizzazione stile chat
+        entries.sort(key=lambda e: parse_ts(str(e.get("timestamp", ""))))
+
+        result: List[ConversationMessage] = []
+        for idx, e in enumerate(entries):
+            msg = ConversationMessage(
+                id=f"{e.get('timestamp','')}:{idx}",
+                timestamp=str(e.get("timestamp")),
+                jd_id=str(e.get("jd_id")),
+                candidate_id=str(e.get("candidate_id")),
+                message=str(e.get("message", "")),
+                from_role=str(e.get("from_role")) if e.get("from_role") is not None else None,
+                from_company=str(e.get("from_company")) if e.get("from_company") is not None else None,
+                from_name=str(e.get("from_name")) if e.get("from_name") is not None else None,
+            )
+            result.append(msg)
+
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore lettura conversazione: {e}")
 
 
 class ApplyPayload(BaseModel):
@@ -260,3 +337,212 @@ async def get_applications(
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Errore lettura candidature: {e}")
+
+
+class CandidateApplication(BaseModel):
+    id: str
+    timestamp: str
+    jd_id: str
+    company: Optional[str] = None
+    message: str
+
+
+@router.get("/contact/my_applications", response_model=List[CandidateApplication])
+async def get_my_applications(
+    current_user: User = Depends(get_current_user),
+):
+    """Restituisce le candidature spontanee inviate dal candidato corrente.
+
+    Usa lo stesso file JSONL delle candidature lato azienda ma filtrando per
+    candidate_user_id == utente loggato.
+    """
+
+    if current_user.role != "candidate":
+        raise HTTPException(status_code=403, detail="Solo i candidati possono vedere le proprie candidature")
+
+    base_dir = Path("/app/data")
+    log_path = base_dir / "applications.jsonl"
+
+    if not log_path.exists():
+        return []
+
+    try:
+        raw_entries: List[Dict[str, Any]] = []
+        with log_path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    raw = json.loads(line)
+                    raw_entries.append(raw)
+                except json.JSONDecodeError:
+                    continue
+
+        cid = str(current_user.id)
+        entries = [e for e in raw_entries if str(e.get("candidate_user_id")) == cid]
+
+        def parse_ts(ts: str) -> float:
+            try:
+                return datetime.fromisoformat(ts).timestamp()
+            except Exception:
+                return 0.0
+
+        entries.sort(key=lambda e: parse_ts(str(e.get("timestamp", ""))), reverse=True)
+
+        result: List[CandidateApplication] = []
+        for idx, e in enumerate(entries):
+            app = CandidateApplication(
+                id=f"{e.get('timestamp','')}:{idx}",
+                timestamp=str(e.get("timestamp")),
+                jd_id=str(e.get("jd_id")),
+                company=str(e.get("company")) if e.get("company") is not None else None,
+                message=str(e.get("message", "")),
+            )
+            result.append(app)
+
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore lettura candidature candidato: {e}")
+
+
+class ConversationReplyPayload(BaseModel):
+    jd_id: str
+    message: str
+
+
+@router.post("/contact/reply")
+async def reply_to_contact(
+    payload: ConversationReplyPayload,
+    current_user: User = Depends(get_current_user),
+):
+    """Permette al candidato (e in futuro all'azienda) di rispondere in chat.
+
+    Le risposte vengono salvate nello stesso file JSONL usato per i messaggi
+    iniziali di contatto, così la conversazione può essere ricostruita
+    interamente dal frontend.
+    """
+
+    base_dir = Path("/app/data")
+    try:
+        base_dir.mkdir(parents=True, exist_ok=True)
+        log_path = base_dir / "contact_messages.jsonl"
+
+        entry = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "from_user_id": str(current_user.id),
+            "from_role": getattr(current_user, "role", None),
+            "from_company": getattr(current_user, "company", None),
+            "from_name": getattr(current_user, "name", None),
+            # Per ora supportiamo solo risposte del candidato, quindi candidate_id = current_user.id
+            "candidate_id": str(current_user.id),
+            "jd_id": payload.jd_id,
+            "message": payload.message,
+        }
+
+        with log_path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+        return {"status": "ok"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore salvataggio risposta: {e}")
+
+
+@router.get("/contact/conversation/company", response_model=List[ConversationMessage])
+async def get_conversation_company(
+    jd_id: str,
+    candidate_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Restituisce la conversazione per una JD e un candidato, vista lato azienda.
+
+    Per sicurezza verifica che l'azienda corrente sia effettivamente destinataria
+    della candidatura (applications.jsonl) prima di mostrare i messaggi.
+    """
+
+    if current_user.role != "company":
+        raise HTTPException(status_code=403, detail="Solo le aziende possono vedere questa conversazione")
+
+    base_dir = Path("/app/data")
+    apps_path = base_dir / "applications.jsonl"
+    log_path = base_dir / "contact_messages.jsonl"
+
+    # Se non esiste il file delle candidature o dei messaggi, restituisci lista vuota
+    if not log_path.exists():
+        return []
+
+    # Verifica che esista almeno una candidatura per questa combinazione
+    if apps_path.exists():
+        try:
+            has_application = False
+            with apps_path.open("r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        raw = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if (
+                        str(raw.get("candidate_user_id")) == str(candidate_id)
+                        and str(raw.get("jd_id")) == str(jd_id)
+                        and str(raw.get("company")) == getattr(current_user, "company", None)
+                    ):
+                        has_application = True
+                        break
+            if not has_application:
+                raise HTTPException(status_code=403, detail="Conversazione non autorizzata per questa azienda")
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Errore verifica candidatura: {e}")
+
+    try:
+        raw_entries: List[Dict[str, Any]] = []
+        with log_path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    raw = json.loads(line)
+                    raw_entries.append(raw)
+                except json.JSONDecodeError:
+                    continue
+
+        # Filtra tutti i messaggi per questo candidato e JD
+        cid = str(candidate_id)
+        entries = [
+            e
+            for e in raw_entries
+            if str(e.get("candidate_id")) == cid and str(e.get("jd_id")) == jd_id
+        ]
+
+        def parse_ts(ts: str) -> float:
+            try:
+                return datetime.fromisoformat(ts).timestamp()
+            except Exception:
+                return 0.0
+
+        entries.sort(key=lambda e: parse_ts(str(e.get("timestamp", ""))))
+
+        result: List[ConversationMessage] = []
+        for idx, e in enumerate(entries):
+            msg = ConversationMessage(
+                id=f"{e.get('timestamp','')}:{idx}",
+                timestamp=str(e.get("timestamp")),
+                jd_id=str(e.get("jd_id")),
+                candidate_id=str(e.get("candidate_id")),
+                message=str(e.get("message", "")),
+                from_role=str(e.get("from_role")) if e.get("from_role") is not None else None,
+                from_company=str(e.get("from_company")) if e.get("from_company") is not None else None,
+                from_name=str(e.get("from_name")) if e.get("from_name") is not None else None,
+            )
+            result.append(msg)
+
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore lettura conversazione azienda: {e}")

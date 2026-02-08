@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, type CSSProperties } from "react";
+import { useState, useEffect, useMemo, useCallback, type CSSProperties } from "react";
 import RegisterForm from "@/components/RegisterForm";
 // import LandingPage from "./LandingPage";
 import Header from "@/components/Header";
@@ -172,6 +172,57 @@ const Index = () => {
   const [inboxOpen, setInboxOpen] = useState(false);
   const [hasUnreadInbox, setHasUnreadInbox] = useState(false);
 
+  const buildInboxKey = useCallback((msg: InboxMessage): string => {
+    return [msg.timestamp, msg.jd_id, msg.from_company || "", msg.from_name || "", msg.message]
+      .join("|");
+  }, []);
+
+  const [seenInboxKeys, setSeenInboxKeys] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem("piazzati:seenInboxMessages");
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const markInboxAsSeen = (msg: InboxMessage) => {
+    const key = buildInboxKey(msg);
+    setSeenInboxKeys((prev) => {
+      if (prev.includes(key)) return prev;
+      const next = [...prev, key];
+      try {
+        localStorage.setItem("piazzati:seenInboxMessages", JSON.stringify(next));
+      } catch {
+        // ignore storage errors
+      }
+      return next;
+    });
+  };
+
+  type ConversationMessage = {
+    id: string;
+    timestamp: string;
+    jd_id: string;
+    candidate_id: string;
+    message: string;
+    from_role?: string | null;
+    from_company?: string | null;
+    from_name?: string | null;
+  };
+
+  const [openConversationJdId, setOpenConversationJdId] = useState<string | null>(null);
+  const [conversationMessages, setConversationMessages] = useState<ConversationMessage[]>([]);
+  const [loadingConversation, setLoadingConversation] = useState(false);
+  const [conversationDraft, setConversationDraft] = useState("");
+
+  const [openCompanyConversation, setOpenCompanyConversation] = useState<{ jdId: string; candidateId: string } | null>(null);
+  const [companyConversationMessages, setCompanyConversationMessages] = useState<ConversationMessage[]>([]);
+  const [loadingCompanyConversation, setLoadingCompanyConversation] = useState(false);
+  const [companyConversationDraft, setCompanyConversationDraft] = useState("");
+
   // Candidature ricevute lato azienda
   type CompanyApplication = {
     id: string;
@@ -186,6 +237,36 @@ const Index = () => {
 
   const [companyApplications, setCompanyApplications] = useState<CompanyApplication[]>([]);
 
+  const buildCompanyAppKey = useCallback((app: CompanyApplication): string => {
+    return [app.timestamp, app.jd_id, app.candidate_user_id, app.candidate_name || "", app.message]
+      .join("|");
+  }, []);
+
+  const [seenCompanyAppKeys, setSeenCompanyAppKeys] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem("piazzati:seenCompanyApplications");
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const markCompanyAppAsSeen = (app: CompanyApplication) => {
+    const key = buildCompanyAppKey(app);
+    setSeenCompanyAppKeys((prev) => {
+      if (prev.includes(key)) return prev;
+      const next = [...prev, key];
+      try {
+        localStorage.setItem("piazzati:seenCompanyApplications", JSON.stringify(next));
+      } catch {
+        // ignore storage errors
+      }
+      return next;
+    });
+  };
+
   const fetchInbox = async () => {
     if (!jwtToken || authRole !== "candidate") return;
     try {
@@ -198,12 +279,50 @@ const Index = () => {
       const data = await res.json();
       if (Array.isArray(data)) {
         setInboxMessages(data as InboxMessage[]);
-        if (!inboxOpen && data.length > 0) {
-          setHasUnreadInbox(true);
-        }
       }
     } catch {
       // silenzioso: la inbox non è critica
+    }
+  };
+
+  const fetchConversation = async (jdId: string) => {
+    if (!jwtToken || authRole !== "candidate") return;
+    try {
+      setLoadingConversation(true);
+      const res = await fetch(`/api/contact/conversation?jd_id=${encodeURIComponent(jdId)}`, {
+        headers: { Authorization: `Bearer ${jwtToken}` },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setConversationMessages(data as ConversationMessage[]);
+      }
+    } catch {
+      // silenzioso per ora
+    } finally {
+      setLoadingConversation(false);
+    }
+  };
+
+  const fetchCompanyConversation = async (jdId: string, candidateId: string) => {
+    if (!jwtToken || authRole !== "company") return;
+    try {
+      setLoadingCompanyConversation(true);
+      const res = await fetch(
+        `/api/contact/conversation/company?jd_id=${encodeURIComponent(jdId)}&candidate_id=${encodeURIComponent(candidateId)}`,
+        {
+          headers: { Authorization: `Bearer ${jwtToken}` },
+        }
+      );
+      if (!res.ok) return;
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setCompanyConversationMessages(data as ConversationMessage[]);
+      }
+    } catch {
+      // silenzioso per ora
+    } finally {
+      setLoadingCompanyConversation(false);
     }
   };
 
@@ -240,6 +359,24 @@ const Index = () => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authRole, jwtToken]);
+
+  const unreadInboxMessages = useMemo(
+    () =>
+      inboxMessages.filter((msg) => !seenInboxKeys.includes(buildInboxKey(msg))),
+    [inboxMessages, seenInboxKeys, buildInboxKey]
+  );
+
+  const unreadCompanyApplications = useMemo(
+    () =>
+      companyApplications.filter((app) => !seenCompanyAppKeys.includes(buildCompanyAppKey(app))),
+    [companyApplications, seenCompanyAppKeys, buildCompanyAppKey]
+  );
+
+  useEffect(() => {
+    if (authRole === "candidate") {
+      setHasUnreadInbox(unreadInboxMessages.length > 0);
+    }
+  }, [authRole, unreadInboxMessages]);
 
   // Current candidate sempre sincronizzato
   const currentCandidate = candidates.find(c => c.id === activeCandidateId) || candidates[0];
@@ -746,28 +883,29 @@ const Index = () => {
             toast({ title: "Logout eseguito", description: "Sei tornato alla pagina di login" });
           }}
           showInbox={true}
-          inboxCount={authRole === "candidate" ? inboxMessages.length : companyApplications.length}
-          hasUnreadInbox={hasUnreadInbox || (authRole === "company" && companyApplications.length > 0)}
+          inboxCount={authRole === "candidate" ? unreadInboxMessages.length : unreadCompanyApplications.length}
+          hasUnreadInbox={
+            authRole === "candidate"
+              ? hasUnreadInbox
+              : authRole === "company" && unreadCompanyApplications.length > 0
+          }
           onToggleInbox={async () => {
             if (authRole === "candidate") {
               if (!inboxOpen) {
                 await fetchInbox();
               }
               setInboxOpen((prev) => !prev);
-              if (!inboxOpen) {
-                setHasUnreadInbox(false);
-              }
             } else if (authRole === "company") {
-              const el = document.getElementById("company-spontaneous-section");
-              if (el) {
-                el.scrollIntoView({ behavior: "smooth", block: "start" });
+              if (!inboxOpen) {
+                await fetchCompanyApplications();
               }
+              setInboxOpen((prev) => !prev);
             }
           }}
         />
       )}
       {/* Inbox candidato: pannello a discesa dalla campanella */}
-      {authRole === "candidate" && inboxOpen && inboxMessages.length > 0 && (
+      {authRole === "candidate" && inboxOpen && unreadInboxMessages.length > 0 && (
         <div className="fixed top-16 right-4 z-40 w-80 max-h-[60vh] overflow-y-auto bg-white/95 shadow-lg rounded-lg border p-3 space-y-3">
           <div className="flex items-center justify-between mb-1">
             <h2 className="text-sm font-semibold">Messaggi dalle aziende</h2>
@@ -778,10 +916,10 @@ const Index = () => {
               Chiudi
             </button>
           </div>
-          {inboxMessages.map((msg) => {
+          {unreadInboxMessages.map((msg) => {
             const jdTitle = jobDescriptions.find((jd) => jd.jd_id === msg.jd_id)?.title;
             return (
-              <div key={msg.id} className="border rounded-md px-2 py-2 text-xs bg-muted/60">
+              <div key={msg.id} className="border rounded-md px-2 py-2 text-xs bg-muted/60 space-y-1">
                 <div className="flex flex-col mb-1">
                   <span className="font-semibold text-pink-900">
                     {msg.from_company || "Azienda"}
@@ -796,6 +934,18 @@ const Index = () => {
                   </div>
                 )}
                 <p className="text-[11px] whitespace-pre-wrap">{msg.message}</p>
+                <button
+                  type="button"
+                  className="mt-1 text-[11px] text-primary hover:underline"
+                  onClick={async () => {
+                    markInboxAsSeen(msg);
+                    setOpenConversationJdId(msg.jd_id);
+                    await fetchConversation(msg.jd_id);
+                    setInboxOpen(false);
+                  }}
+                >
+                  Accetta e apri chat
+                </button>
               </div>
             );
           })}
@@ -803,7 +953,7 @@ const Index = () => {
       )}
 
       {/* Inbox azienda: candidature spontanee */}
-      {authRole === "company" && companyApplications.length > 0 && (
+      {authRole === "company" && inboxOpen && companyApplications.length > 0 && (
         <div className="fixed top-16 right-4 z-40 w-80 max-h-[60vh] overflow-y-auto bg-white/95 shadow-lg rounded-lg border p-3 space-y-3">
           <div className="flex items-center justify-between mb-1">
             <h2 className="text-sm font-semibold">Candidature spontanee</h2>
@@ -811,16 +961,9 @@ const Index = () => {
           {companyApplications.map((app) => {
             const jd = jobDescriptions.find((j) => j.jd_id === app.jd_id);
             return (
-              <button
+              <div
                 key={app.id}
-                type="button"
-                className="w-full text-left border rounded-md px-2 py-2 text-xs bg-muted/60 hover:bg-muted"
-                onClick={() => {
-                  const anchor = document.getElementById("company-spontaneous-section");
-                  if (anchor) {
-                    anchor.scrollIntoView({ behavior: "smooth", block: "start" });
-                  }
-                }}
+                className="w-full border rounded-md px-2 py-2 text-xs bg-muted/60"
               >
                 <div className="flex flex-col mb-1">
                   <span className="font-semibold text-pink-900">
@@ -836,10 +979,269 @@ const Index = () => {
                     Candidatura spontanea
                   </div>
                 )}
-                <p className="text-[11px] line-clamp-2 whitespace-pre-wrap">{app.message}</p>
-              </button>
+                <p className="text-[11px] line-clamp-2 whitespace-pre-wrap mb-1">{app.message}</p>
+                <div className="flex justify-between gap-2 mt-1">
+                  <button
+                    type="button"
+                    className="text-[11px] text-primary hover:underline"
+                    onClick={() => {
+                      markCompanyAppAsSeen(app);
+                      setInboxOpen(false);
+                      const anchor = document.getElementById("company-spontaneous-section");
+                      if (anchor) {
+                        anchor.scrollIntoView({ behavior: "smooth", block: "start" });
+                      }
+                    }}
+                  >
+                    Vai alla sezione
+                  </button>
+                  <button
+                    type="button"
+                    className="text-[11px] text-primary hover:underline"
+                    onClick={async () => {
+                      markCompanyAppAsSeen(app);
+                      setInboxOpen(false);
+                      setOpenCompanyConversation({ jdId: app.jd_id, candidateId: app.candidate_user_id });
+                      await fetchCompanyConversation(app.jd_id, app.candidate_user_id);
+                    }}
+                  >
+                    Apri chat
+                  </button>
+                </div>
+              </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Chat candidato-azienda */}
+      {authRole === "candidate" && openConversationJdId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-full max-w-md max-h-[80vh] bg-white rounded-lg shadow-lg border flex flex-col">
+            <div className="px-4 py-2 border-b flex items-center justify-between">
+              <div className="flex flex-col">
+                <span className="text-sm font-semibold">Chat con l'azienda</span>
+                {(() => {
+                  const jd = jobDescriptions.find((j) => j.jd_id === openConversationJdId);
+                  return jd ? (
+                    <span className="text-[11px] text-muted-foreground">Posizione: {jd.title}</span>
+                  ) : null;
+                })()}
+              </div>
+              <button
+                type="button"
+                className="text-xs text-muted-foreground hover:underline"
+                onClick={() => {
+                  setOpenConversationJdId(null);
+                  setConversationMessages([]);
+                  setConversationDraft("");
+                }}
+              >
+                Chiudi
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2 text-xs bg-muted/40">
+              {loadingConversation && (
+                <div className="text-center text-[11px] text-muted-foreground">Caricamento conversazione...</div>
+              )}
+              {!loadingConversation && conversationMessages.length === 0 && (
+                <div className="text-center text-[11px] text-muted-foreground">
+                  Nessun messaggio nella conversazione.
+                </div>
+              )}
+              {conversationMessages.map((m) => {
+                const isCandidate = m.from_role === "candidate";
+                return (
+                  <div
+                    key={m.id}
+                    className={`flex ${isCandidate ? "justify-end" : "justify-start"}`}
+                  >
+                    <div
+                      className={`max-w-[75%] rounded-lg px-2 py-1 ${
+                        isCandidate ? "bg-primary text-primary-foreground" : "bg-white border"
+                      }`}
+                    >
+                      {!isCandidate && (
+                        <div className="text-[10px] font-semibold mb-0.5">
+                          {m.from_company || m.from_name || "Azienda"}
+                        </div>
+                      )}
+                      <div className="whitespace-pre-wrap text-[11px]">{m.message}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <form
+              className="border-t px-3 py-2 flex items-center gap-2"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const text = conversationDraft.trim();
+                if (!text || !jwtToken || !openConversationJdId) return;
+                try {
+                  const res = await fetch("/api/contact/reply", {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                      Authorization: `Bearer ${jwtToken}`,
+                    },
+                    body: JSON.stringify({ jd_id: openConversationJdId, message: text }),
+                  });
+                  if (!res.ok) {
+                    const txt = await res.text();
+                    toast({
+                      title: "Errore invio messaggio",
+                      description: txt || "Non è stato possibile inviare il messaggio.",
+                      variant: "destructive",
+                    });
+                    return;
+                  }
+                  setConversationDraft("");
+                  await fetchConversation(openConversationJdId);
+                } catch (err) {
+                  console.error("Errore invio messaggio conversazione", err);
+                  toast({
+                    title: "Errore invio messaggio",
+                    description: "Non è stato possibile inviare il messaggio.",
+                    variant: "destructive",
+                  });
+                }
+              }}
+            >
+              <input
+                type="text"
+                className="flex-1 border rounded px-2 py-1 text-xs"
+                placeholder="Scrivi un messaggio per organizzare la call..."
+                value={conversationDraft}
+                onChange={(e) => setConversationDraft(e.target.value)}
+              />
+              <button
+                type="submit"
+                className="text-xs px-3 py-1 rounded bg-primary text-primary-foreground hover:bg-primary/90"
+                disabled={!conversationDraft.trim()}
+              >
+                Invia
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Chat azienda-candidato (speculare) */}
+      {authRole === "company" && openCompanyConversation && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-full max-w-md max-h-[80vh] bg-white rounded-lg shadow-lg border flex flex-col">
+            <div className="px-4 py-2 border-b flex items-center justify-between">
+              <div className="flex flex-col">
+                <span className="text-sm font-semibold">Chat con il candidato</span>
+                {(() => {
+                  const jd = jobDescriptions.find((j) => j.jd_id === openCompanyConversation.jdId);
+                  return jd ? (
+                    <span className="text-[11px] text-muted-foreground">Posizione: {jd.title}</span>
+                  ) : null;
+                })()}
+              </div>
+              <button
+                type="button"
+                className="text-xs text-muted-foreground hover:underline"
+                onClick={() => {
+                  setOpenCompanyConversation(null);
+                  setCompanyConversationMessages([]);
+                  setCompanyConversationDraft("");
+                }}
+              >
+                Chiudi
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2 text-xs bg-muted/40">
+              {loadingCompanyConversation && (
+                <div className="text-center text-[11px] text-muted-foreground">Caricamento conversazione...</div>
+              )}
+              {!loadingCompanyConversation && companyConversationMessages.length === 0 && (
+                <div className="text-center text-[11px] text-muted-foreground">
+                  Nessun messaggio nella conversazione.
+                </div>
+              )}
+              {companyConversationMessages.map((m) => {
+                const isCompany = m.from_role === "company";
+                return (
+                  <div
+                    key={m.id}
+                    className={`flex ${isCompany ? "justify-end" : "justify-start"}`}
+                  >
+                    <div
+                      className={`max-w-[75%] rounded-lg px-2 py-1 ${
+                        isCompany ? "bg-primary text-primary-foreground" : "bg-white border"
+                      }`}
+                    >
+                      {!isCompany && (
+                        <div className="text-[10px] font-semibold mb-0.5">
+                          Candidato
+                        </div>
+                      )}
+                      <div className="whitespace-pre-wrap text-[11px]">{m.message}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <form
+              className="border-t px-3 py-2 flex items-center gap-2"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!openCompanyConversation) return;
+                const text = companyConversationDraft.trim();
+                if (!text || !jwtToken) return;
+                try {
+                  const res = await fetch("/api/contact/candidate", {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                      Authorization: `Bearer ${jwtToken}`,
+                    },
+                    body: JSON.stringify({
+                      jd_id: openCompanyConversation.jdId,
+                      candidate_id: openCompanyConversation.candidateId,
+                      message: text,
+                    }),
+                  });
+                  if (!res.ok) {
+                    const txt = await res.text();
+                    toast({
+                      title: "Errore invio messaggio",
+                      description: txt || "Non è stato possibile inviare il messaggio.",
+                      variant: "destructive",
+                    });
+                    return;
+                  }
+                  setCompanyConversationDraft("");
+                  await fetchCompanyConversation(openCompanyConversation.jdId, openCompanyConversation.candidateId);
+                } catch (err) {
+                  console.error("Errore invio messaggio conversazione azienda", err);
+                  toast({
+                    title: "Errore invio messaggio",
+                    description: "Non è stato possibile inviare il messaggio.",
+                    variant: "destructive",
+                  });
+                }
+              }}
+            >
+              <input
+                type="text"
+                className="flex-1 border rounded px-2 py-1 text-xs"
+                placeholder="Scrivi un messaggio al candidato..."
+                value={companyConversationDraft}
+                onChange={(e) => setCompanyConversationDraft(e.target.value)}
+              />
+              <button
+                type="submit"
+                className="text-xs px-3 py-1 rounded bg-primary text-primary-foreground hover:bg-primary/90"
+                disabled={!companyConversationDraft.trim()}
+              >
+                Invia
+              </button>
+            </form>
+          </div>
         </div>
       )}
       <main className="container mx-auto px-4 py-8">
