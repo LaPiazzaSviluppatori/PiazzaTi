@@ -1868,6 +1868,7 @@ const Index = () => {
                 }}
                 role={authRole ?? "candidate"}
                 jwtToken={jwtToken}
+                companyName={currentUserProfile?.company}
               />
             </TabsContent>
           </Tabs>

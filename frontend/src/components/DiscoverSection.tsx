@@ -28,6 +28,7 @@ interface DiscoverSectionProps {
   onEvaluateMatch: (jdId: string) => void;
   role: "candidate" | "company";
   jwtToken?: string | null;
+  companyName?: string | null;
 }
 
 interface XAIReason {
@@ -49,6 +50,13 @@ interface XAIData {
   evidence?: Record<string, unknown>;
 }
 
+type CompanyFeedPost = {
+  id: string;
+  companyName: string;
+  text: string;
+  createdAt: string;
+};
+
 export const DiscoverSection = ({
   suggestedProfiles,
   opportunities,
@@ -59,6 +67,7 @@ export const DiscoverSection = ({
   onEvaluateMatch,
   role,
   jwtToken,
+  companyName,
 }: DiscoverSectionProps) => {
   const getOpportunityIcon = (type: string) => {
     switch (type) {
@@ -95,6 +104,62 @@ export const DiscoverSection = ({
   const [applyJob, setApplyJob] = React.useState<JobDescription | null>(null);
   const [applyMessage, setApplyMessage] = React.useState("");
   const [sendingApplication, setSendingApplication] = React.useState(false);
+
+  // Aziende suggerite: completamente mock, indipendenti dai dati reali
+  const suggestedCompanies = React.useMemo(
+    () => [
+      {
+        name: "Tech4Skills Lab",
+        city: "Milano",
+        country: "Italia",
+        openings: 3,
+      },
+      {
+        name: "Inclusive Talent Hub",
+        city: "Torino",
+        country: "Italia",
+        openings: 2,
+      },
+      {
+        name: "NextGen Careers Studio",
+        city: "Bologna",
+        country: "Italia",
+        openings: 4,
+      },
+      {
+        name: "FutureWork Collective",
+        city: "Roma",
+        country: "Italia",
+        openings: 1,
+      },
+    ],
+    []
+  );
+
+  // Feed dei post aziendali: completamente mock per la demo
+  const companyFeed: CompanyFeedPost[] = React.useMemo(
+    () => [
+      {
+        id: "mock-1",
+        companyName: "Tech4Skills Lab",
+        text: "Oggi abbiamo lanciato un nuovo programma di mentoring per junior developer che vogliono crescere su AI e dati.",
+        createdAt: "2026-02-08T09:15:00Z",
+      },
+      {
+        id: "mock-2",
+        companyName: "Inclusive Talent Hub",
+        text: "Stiamo cercando profili da background non convenzionali per ruoli product e data. Se ti riconosci, questa demo è pensata per te.",
+        createdAt: "2026-02-08T10:30:00Z",
+      },
+      {
+        id: "mock-3",
+        companyName: "FutureWork Collective",
+        text: "Nuove aperture su posizioni fully remote, con focus su equilibrio vita-lavoro e percorsi di crescita strutturati.",
+        createdAt: "2026-02-08T11:05:00Z",
+      },
+    ],
+    []
+  );
 
   // Estrae lo score numerico dalla risposta del matcher
   const extractScore = (result: unknown): number | null => {
@@ -277,13 +342,135 @@ export const DiscoverSection = ({
 
   return (
     <div className="space-y-6">
-      {/* Se azienda: mostra profili candidati */}
+      {/* Se candidato: profili con interessi simili per networking */}
+      {role === "candidate" && suggestedProfiles.length > 0 && (
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold flex items-center gap-2">
+              <Users className="h-5 w-5 text-primary" />
+              Profili con interessi simili
+            </h3>
+            <Badge variant="outline">{suggestedProfiles.length} profili</Badge>
+          </div>
+          <p className="text-sm text-muted-foreground mb-4">
+            Qui vedi alcuni profili che condividono interessi o percorsi simili ai tuoi.
+            Puoi usarli come ispirazione o avviare un contatto direttamente dalla demo.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {suggestedProfiles.slice(0, 6).map((profile) => {
+              const candidateTags = activeCandidate?.optInTags ?? [];
+              const profileTags = profile.optInTags ?? [];
+              const commonTags = candidateTags.filter((ct) =>
+                profileTags.some((pt) => pt.label === ct.label)
+              );
+              const tagsToShow = (commonTags.length > 0 ? commonTags : profileTags).slice(0, 3);
+              const commonLabelPrefix = commonTags.length > 0 ? "Interessi in comune:" : "Interessi principali:";
+
+              return (
+                <Card key={profile.id} className="p-4 hover:shadow-lg transition-shadow flex flex-col gap-2">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground flex-shrink-0">
+                      {profile.name
+                        .split(" ")
+                        .filter(Boolean)
+                        .map((n) => n[0])
+                        .join("")}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm truncate">{profile.name}</p>
+                      <p className="text-[11px] text-muted-foreground truncate">{profile.location}</p>
+                    </div>
+                  </div>
+                  {profile.summary && (
+                    <p className="text-[11px] text-muted-foreground line-clamp-2 mt-1">
+                      {profile.summary}
+                    </p>
+                  )}
+                  {tagsToShow.length > 0 && (
+                    <p className="text-[11px] text-muted-foreground mt-1">
+                      <span className="font-medium">{commonLabelPrefix}</span>{" "}
+                      {tagsToShow.map((t) => t.label).join(", ")}
+                    </p>
+                  )}
+                  <div className="mt-2">
+                    <Button
+                      size="sm"
+                      className="w-full text-xs"
+                      variant="outline"
+                      type="button"
+                      onClick={() => onConnect(profile.id)}
+                    >
+                      Collegati a questo profilo
+                    </Button>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        </Card>
+      )}
+
+      {/* Se candidato: aziende suggerite (mock) */}
+      {role === "candidate" && suggestedCompanies.length > 0 && (
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold flex items-center gap-2">
+              <Briefcase className="h-5 w-5 text-primary" />
+              Aziende suggerite
+            </h3>
+            <Badge variant="outline">{suggestedCompanies.length} aziende</Badge>
+          </div>
+          <p className="text-sm text-muted-foreground mb-4">
+            Una selezione di aziende che stanno pubblicando posizioni in linea con i profili della demo.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {suggestedCompanies.map((company) => {
+              return (
+                <Card key={company.name} className="p-4 flex flex-col gap-2">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted text-xs font-bold flex-shrink-0">
+                      {company.name
+                        .split(" ")
+                        .filter(Boolean)
+                        .map((n) => n[0])
+                        .join("")}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm truncate">{company.name}</p>
+                      <p className="text-[11px] text-muted-foreground truncate">
+                        {company.city}, {company.country}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    {company.openings === 1
+                      ? "1 posizione aperta nella demo"
+                      : `${company.openings} posizioni aperte nella demo`}
+                  </p>
+                  <div className="mt-2">
+                    <Button
+                      size="sm"
+                      className="w-full text-xs"
+                      variant="outline"
+                      type="button"
+                    >
+                      Scopri le posizioni di questa azienda
+                    </Button>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        </Card>
+      )}
+
+      {/* Se azienda: mostra profili candidati suggeriti (candidati mock) */}
       {role === "company" && (
         <Card className="p-6">
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-lg font-semibold flex items-center gap-2">
               <Users className="h-5 w-5 text-primary" />
-              Profili Consigliati
+              Profili candidati consigliati
             </h3>
             <Badge variant="outline">{suggestedProfiles.length} profili</Badge>
           </div>
@@ -317,6 +504,60 @@ export const DiscoverSection = ({
                 </Button>
               </Card>
             ))}
+          </div>
+        </Card>
+      )}
+
+      {/* Se azienda: suggerimenti di altre aziende (mock) */}
+      {role === "company" && suggestedCompanies.length > 0 && (
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold flex items-center gap-2">
+              <Briefcase className="h-5 w-5 text-primary" />
+              Altre aziende nella demo
+            </h3>
+            <Badge variant="outline">{suggestedCompanies.length} aziende</Badge>
+          </div>
+          <p className="text-sm text-muted-foreground mb-4">
+            Una selezione di aziende presenti nella demo che puoi usare come riferimento o possibili partner.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {suggestedCompanies.map((company) => {
+              return (
+                <Card key={company.name} className="p-4 flex flex-col gap-2">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted text-xs font-bold flex-shrink-0">
+                      {company.name
+                        .split(" ")
+                        .filter(Boolean)
+                        .map((n) => n[0])
+                        .join("")}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm truncate">{company.name}</p>
+                      <p className="text-[11px] text-muted-foreground truncate">
+                        {company.city}, {company.country}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    {company.openings === 1
+                      ? "1 posizione aperta nella demo"
+                      : `${company.openings} posizioni aperte nella demo`}
+                  </p>
+                  <div className="mt-2">
+                    <Button
+                      size="sm"
+                      className="w-full text-xs"
+                      variant="outline"
+                      type="button"
+                    >
+                      Vedi profilo azienda (demo)
+                    </Button>
+                  </div>
+                </Card>
+              );
+            })}
           </div>
         </Card>
       )}
@@ -356,6 +597,37 @@ export const DiscoverSection = ({
           ))}
         </div>
       </Card>
+
+      {/* Se candidato: feed dei post pubblicati dalle aziende (demo, da localStorage) */}
+      {role === "candidate" && companyFeed.length > 0 && (
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 text-primary" />
+              Post dalle aziende
+            </h3>
+            <Badge variant="outline">{companyFeed.length} post</Badge>
+          </div>
+          <p className="text-sm text-muted-foreground mb-4">
+            Qui vedi, in modalità demo, gli aggiornamenti pubblicati dalle aziende nella sezione Azienda.
+          </p>
+          <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+            {companyFeed.map((post) => (
+              <div key={post.id} className="border rounded-lg p-3 text-sm bg-muted/40">
+                <div className="flex items-center justify-between mb-1">
+                  <p className="font-semibold text-xs truncate">{post.companyName}</p>
+                  <span className="text-[10px] text-muted-foreground">
+                    {new Date(post.createdAt).toLocaleString()}
+                  </span>
+                </div>
+                <p className="text-xs whitespace-pre-wrap text-muted-foreground">
+                  {post.text}
+                </p>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {/* Sezione "Lavori consigliati per te" è stata rimossa da Discover: ora vive nella sezione Pipeline */}
       <Dialog

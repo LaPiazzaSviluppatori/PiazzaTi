@@ -639,9 +639,26 @@ const GestisciCandidature: React.FC<GestisciCandidatureProps> = ({
                             const key = `${jd.jd_id}:${c.user_id}`;
                             const xai = xaiByCandidate[key];
                             const xaiError = xaiErrorByCandidate[key];
-                            const mainReason = xai?.top_reasons && xai.top_reasons.length > 0
-                              ? xai.top_reasons[0]
-                              : null;
+                            const qualityLabel = xai?.quality_label;
+                            const qualityLabelText = qualityLabel === "EXCELLENT"
+                              ? "Eccellente"
+                              : qualityLabel === "GOOD"
+                                ? "Buono"
+                                : qualityLabel === "WEAK"
+                                  ? "Da approfondire"
+                                  : null;
+                            const reasons = xai?.top_reasons ?? [];
+                            const risks = xai?.main_risks ?? [];
+                            const summarizedReasons = reasons
+                              .slice(0, 2)
+                              .map((r) => r.text)
+                              .filter(Boolean)
+                              .join("; ");
+                            const summarizedRisks = risks
+                              .slice(0, 2)
+                              .map((r) => r.text)
+                              .filter(Boolean)
+                              .join("; ");
                             return (
                               <div
                                 key={`${c.user_id}-${c.rank}`}
@@ -664,13 +681,29 @@ const GestisciCandidature: React.FC<GestisciCandidatureProps> = ({
                                       <p className="text-[10px] text-muted-foreground">
                                         Caricamento spiegazione...
                                       </p>
-                                    ) : mainReason ? (
-                                      <p className="text-[10px] text-green-700">
-                                        Perché: {mainReason.text}
-                                        {mainReason.evidence && (
-                                          <span className="text-muted-foreground"> ({mainReason.evidence})</span>
+                                    ) : xai ? (
+                                      <div className="space-y-0.5 text-[10px]">
+                                        {qualityLabelText && (
+                                          <p className="text-green-700">
+                                            Valutazione complessiva: {qualityLabelText}
+                                          </p>
                                         )}
-                                      </p>
+                                        {summarizedReasons && (
+                                          <p className="text-green-700">
+                                            Motivi principali: {summarizedReasons}
+                                          </p>
+                                        )}
+                                        {summarizedRisks && (
+                                          <p className="text-amber-700">
+                                            Attenzioni da considerare: {summarizedRisks}
+                                          </p>
+                                        )}
+                                        {!qualityLabelText && !summarizedReasons && !summarizedRisks && (
+                                          <p className="text-muted-foreground">
+                                            Spiegazione disponibile ma senza dettagli strutturati.
+                                          </p>
+                                        )}
+                                      </div>
                                     ) : xaiError ? (
                                       <p className="text-[10px] text-muted-foreground">
                                         {xaiError}
@@ -681,7 +714,7 @@ const GestisciCandidature: React.FC<GestisciCandidatureProps> = ({
                                         className="text-[10px] text-primary underline"
                                         onClick={() => handleLoadXaiForCandidate(jd.jd_id, c)}
                                       >
-                                        Vedi breve spiegazione
+                                        Vedi spiegazione del match
                                       </button>
                                     )}
                                   </div>
