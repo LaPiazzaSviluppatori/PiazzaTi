@@ -188,6 +188,52 @@ const Index = () => {
     }
   });
 
+  type CompanyReply = {
+    id: string;
+    timestamp: string;
+    jd_id: string;
+    candidate_id: string;
+    candidate_name?: string | null;
+    message: string;
+  };
+
+  const [companyReplies, setCompanyReplies] = useState<CompanyReply[]>([]);
+
+  const buildCompanyReplyKey = useCallback((reply: CompanyReply): string => {
+    return [
+      reply.timestamp,
+      reply.jd_id,
+      reply.candidate_id,
+      reply.candidate_name || "",
+      reply.message,
+    ].join("|");
+  }, []);
+
+  const [seenCompanyReplyKeys, setSeenCompanyReplyKeys] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem("piazzati:seenCompanyReplies");
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const markCompanyReplyAsSeen = (reply: CompanyReply) => {
+    const key = buildCompanyReplyKey(reply);
+    setSeenCompanyReplyKeys((prev) => {
+      if (prev.includes(key)) return prev;
+      const next = [...prev, key];
+      try {
+        localStorage.setItem("piazzati:seenCompanyReplies", JSON.stringify(next));
+      } catch {
+        // ignore storage errors
+      }
+      return next;
+    });
+  };
+
   const markInboxAsSeen = (msg: InboxMessage) => {
     const key = buildInboxKey(msg);
     setSeenInboxKeys((prev) => {
@@ -410,6 +456,24 @@ const Index = () => {
     }
   };
 
+  const fetchCompanyReplies = async () => {
+    if (!jwtToken || authRole !== "company") return;
+    try {
+      const res = await fetch("/api/contact/inbox/company", {
+        headers: {
+          Authorization: `Bearer ${jwtToken}`,
+        },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setCompanyReplies(data as CompanyReply[]);
+      }
+    } catch {
+      // silenzioso
+    }
+  };
+
   useEffect(() => {
     if (authRole === "candidate" && jwtToken) {
       fetchInbox();
@@ -422,8 +486,10 @@ const Index = () => {
     }
     if (authRole === "company" && jwtToken) {
       fetchCompanyApplications();
+      fetchCompanyReplies();
     } else {
       setCompanyApplications([]);
+      setCompanyReplies([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authRole, jwtToken]);
@@ -438,6 +504,12 @@ const Index = () => {
     () =>
       companyApplications.filter((app) => !seenCompanyAppKeys.includes(buildCompanyAppKey(app))),
     [companyApplications, seenCompanyAppKeys, buildCompanyAppKey]
+  );
+
+  const unreadCompanyReplies = useMemo(
+    () =>
+      companyReplies.filter((reply) => !seenCompanyReplyKeys.includes(buildCompanyReplyKey(reply))),
+    [companyReplies, seenCompanyReplyKeys, buildCompanyReplyKey]
   );
 
   useEffect(() => {
@@ -951,11 +1023,16 @@ const Index = () => {
             toast({ title: "Logout eseguito", description: "Sei tornato alla pagina di login" });
           }}
           showInbox={true}
-          inboxCount={authRole === "candidate" ? unreadInboxMessages.length : unreadCompanyApplications.length}
+          inboxCount={
+            authRole === "candidate"
+              ? unreadInboxMessages.length
+              : unreadCompanyApplications.length + unreadCompanyReplies.length
+          }
           hasUnreadInbox={
             authRole === "candidate"
               ? hasUnreadInbox
-              : authRole === "company" && unreadCompanyApplications.length > 0
+              : authRole === "company" &&
+                unreadCompanyApplications.length + unreadCompanyReplies.length > 0
           }
           showChat={true}
           onToggleChat={async () => {
@@ -1021,7 +1098,11 @@ const Index = () => {
               setInboxOpen((prev) => !prev);
             } else if (authRole === "company") {
               if (!inboxOpen) {
-                await fetchCompanyApplications();
+                await Promise.all([fetchCompanyApplications(), fetchCompanyReplies()]);
+              } else {
+                // Segna come visti tutti gli elementi non letti (candidature + risposte chat)
+                unreadCompanyApplications.forEach((app) => markCompanyAppAsSeen(app));
+                unreadCompanyReplies.forEach((reply) => markCompanyReplyAsSeen(reply));
               }
               setInboxOpen((prev) => !prev);
             }
@@ -1077,13 +1158,17 @@ const Index = () => {
         </div>
       )}
 
-      {/* Inbox azienda: candidature spontanee */}
-      {authRole === "company" && inboxOpen && companyApplications.length > 0 && (
+      {/* Inbox azienda: candidature spontanee + nuove risposte in chat */}
+      {authRole === "company" &&
+        inboxOpen &&
+        (unreadCompanyApplications.length > 0 || unreadCompanyReplies.length > 0) && (
         <div className="fixed top-16 right-4 z-40 w-80 max-h-[60vh] overflow-y-auto bg-white/95 shadow-lg rounded-lg border p-3 space-y-3">
-          <div className="flex items-center justify-between mb-1">
-            <h2 className="text-sm font-semibold">Candidature spontanee</h2>
-          </div>
-          {companyApplications.map((app) => {
+          {unreadCompanyApplications.length > 0 && (
+            <div className="flex items-center justify-between mb-1">
+              <h2 className="text-sm font-semibold">Candidature spontanee</h2>
+            </div>
+          )}
+          {unreadCompanyApplications.map((app) => {
             const jd = jobDescriptions.find((j) => j.jd_id === app.jd_id);
             return (
               <div
@@ -1127,6 +1212,51 @@ const Index = () => {
                       markCompanyAppAsSeen(app);
                       setInboxOpen(false);
                       const conv = { jdId: app.jd_id, candidateId: app.candidate_user_id };
+                      setOpenCompanyConversation(conv);
+                      setLastCompanyConversation(conv);
+                      await fetchCompanyConversation(conv.jdId, conv.candidateId);
+                    }}
+                  >
+                    Apri chat
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+
+          {unreadCompanyReplies.length > 0 && (
+            <div className="flex items-center justify-between mt-3 mb-1 border-t pt-2">
+              <h2 className="text-sm font-semibold">Nuove risposte in chat</h2>
+            </div>
+          )}
+          {unreadCompanyReplies.map((reply) => {
+            const jd = jobDescriptions.find((j) => j.jd_id === reply.jd_id);
+            return (
+              <div
+                key={reply.id}
+                className="w-full border rounded-md px-2 py-2 text-xs bg-muted/60"
+              >
+                <div className="flex flex-col mb-1">
+                  <span className="font-semibold text-pink-900">
+                    {reply.candidate_name || "Candidato"}
+                  </span>
+                </div>
+                {jd ? (
+                  <div className="text-[11px] text-muted-foreground mb-1">
+                    Per la posizione: {jd.title}
+                  </div>
+                ) : null}
+                <p className="text-[11px] line-clamp-2 whitespace-pre-wrap mb-1">
+                  {reply.message}
+                </p>
+                <div className="flex justify-end gap-2 mt-1">
+                  <button
+                    type="button"
+                    className="text-[11px] text-primary hover:underline"
+                    onClick={async () => {
+                      markCompanyReplyAsSeen(reply);
+                      setInboxOpen(false);
+                      const conv = { jdId: reply.jd_id, candidateId: reply.candidate_id };
                       setOpenCompanyConversation(conv);
                       setLastCompanyConversation(conv);
                       await fetchCompanyConversation(conv.jdId, conv.candidateId);

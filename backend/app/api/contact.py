@@ -1,7 +1,7 @@
 from datetime import datetime
 import json
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Set
 from enum import Enum
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -415,6 +415,109 @@ async def get_my_applications(
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Errore lettura candidature candidato: {e}")
+
+
+class CompanyInboxReply(BaseModel):
+    id: str
+    timestamp: str
+    jd_id: str
+    candidate_id: str
+    candidate_name: Optional[str] = None
+    message: str
+
+
+@router.get("/contact/inbox/company", response_model=List[CompanyInboxReply])
+async def get_company_inbox(
+    current_user: User = Depends(get_current_user),
+):
+    """Restituisce le risposte dei candidati in chat per le JD dell'azienda corrente.
+
+    Usa contact_messages.jsonl per i messaggi e applications.jsonl per verificare
+    che la conversazione sia effettivamente associata a questa azienda.
+    """
+
+    if current_user.role != "company":
+        raise HTTPException(status_code=403, detail="Solo le aziende possono vedere l'inbox chat")
+
+    base_dir = Path("/app/data")
+    apps_path = base_dir / "applications.jsonl"
+    log_path = base_dir / "contact_messages.jsonl"
+
+    if not log_path.exists():
+        return []
+
+    # Costruisci l'insieme di coppie (candidate_id, jd_id) valide per questa azienda
+    allowed_pairs: Set[tuple[str, str]] = set()
+    company_name = getattr(current_user, "company", None)
+    if apps_path.exists() and company_name:
+        try:
+            with apps_path.open("r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        raw = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if str(raw.get("company")) == company_name:
+                        cid = str(raw.get("candidate_user_id"))
+                        jd_id = str(raw.get("jd_id"))
+                        if cid and jd_id:
+                            allowed_pairs.add((cid, jd_id))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Errore lettura candidature per inbox azienda: {e}")
+
+    try:
+        raw_entries: List[Dict[str, Any]] = []
+        with log_path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    raw = json.loads(line)
+                    raw_entries.append(raw)
+                except json.JSONDecodeError:
+                    continue
+
+        # Filtra solo i messaggi inviati dai candidati per coppie (candidate_id, jd_id) valide
+        entries = []
+        for e in raw_entries:
+            from_role = str(e.get("from_role")) if e.get("from_role") is not None else None
+            if from_role != "candidate":
+                continue
+            cid = str(e.get("candidate_id"))
+            jd_id = str(e.get("jd_id"))
+            if (cid, jd_id) in allowed_pairs:
+                entries.append(e)
+
+        def parse_ts(ts: str) -> float:
+            try:
+                return datetime.fromisoformat(ts).timestamp()
+            except Exception:
+                return 0.0
+
+        # Ordina per timestamp decrescente (messaggi più recenti in alto)
+        entries.sort(key=lambda e: parse_ts(str(e.get("timestamp", ""))), reverse=True)
+
+        result: List[CompanyInboxReply] = []
+        for idx, e in enumerate(entries):
+            reply = CompanyInboxReply(
+                id=f"{e.get('timestamp','')}:{idx}",
+                timestamp=str(e.get("timestamp")),
+                jd_id=str(e.get("jd_id")),
+                candidate_id=str(e.get("candidate_id")),
+                candidate_name=str(e.get("from_name")) if e.get("from_name") is not None else None,
+                message=str(e.get("message", "")),
+            )
+            result.append(reply)
+
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore lettura inbox azienda: {e}")
 
 
 class FeedbackType(str, Enum):
