@@ -465,6 +465,72 @@ async def get_my_applications(
         raise HTTPException(status_code=500, detail=f"Errore lettura candidature candidato: {e}")
 
 
+@router.delete("/contact/application")
+async def delete_application(
+    jd_id: str,
+    candidate_user_id: str,
+    timestamp: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Permette all'azienda di eliminare una singola candidatura spontanea.
+
+    Per semplicità nella demo, riscriviamo il file applications.jsonl
+    escludendo la riga che corrisponde a (candidate_user_id, jd_id, timestamp)
+    e alla company dell'utente corrente.
+    """
+
+    if current_user.role != "company":
+        raise HTTPException(status_code=403, detail="Solo le aziende possono eliminare le candidature")
+
+    base_dir = Path("/app/data")
+    log_path = base_dir / "applications.jsonl"
+
+    if not log_path.exists():
+        return {"status": "ok"}
+
+    try:
+        target_cid = str(candidate_user_id)
+        target_jd = str(jd_id)
+        target_ts = str(timestamp)
+        current_company = getattr(current_user, "company", None)
+
+        kept_lines: List[str] = []
+        with log_path.open("r", encoding="utf-8") as f:
+            for line in f:
+                raw_line = line.strip()
+                if not raw_line:
+                    continue
+                try:
+                    obj = json.loads(raw_line)
+                except json.JSONDecodeError:
+                    kept_lines.append(line)
+                    continue
+
+                cid = str(obj.get("candidate_user_id"))
+                jid = str(obj.get("jd_id"))
+                ts = str(obj.get("timestamp"))
+                company = obj.get("company")
+
+                if (
+                    cid == target_cid
+                    and jid == target_jd
+                    and ts == target_ts
+                    and (current_company is None or company == current_company)
+                ):
+                    # saltiamo proprio questa candidatura
+                    continue
+
+                kept_lines.append(line)
+
+        with log_path.open("w", encoding="utf-8") as f:
+            for l in kept_lines:
+                f.write(l if l.endswith("\n") else l + "\n")
+
+        return {"status": "ok"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore eliminazione candidatura: {e}")
+
+
 class CompanyInboxReply(BaseModel):
     id: str
     timestamp: str

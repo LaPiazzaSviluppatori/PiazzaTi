@@ -44,6 +44,7 @@ type CompanyApplication = {
 interface PipelineSectionExtendedProps extends PipelineSectionProps {
   companyApplications?: CompanyApplication[];
   jwtToken?: string | null;
+  onDeleteCompanyApplication?: (app: CompanyApplication) => Promise<void> | void;
 }
 
 interface XAIReason {
@@ -69,7 +70,7 @@ interface PipelineSectionAllProps extends PipelineSectionExtendedProps {
   markCompanyAppAsSeen?: (app: CompanyApplication) => void;
 }
 
-export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode, isParsing, mode = "candidate", onCreateJd, companyName, companyApplications = [], jwtToken, markCompanyAppAsSeen }: PipelineSectionAllProps) => {
+export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode, isParsing, mode = "company", onCreateJd, companyName, companyApplications = [], jwtToken, onDeleteCompanyApplication, markCompanyAppAsSeen }: PipelineSectionAllProps) => {
   const isCompanyMode = mode === "company";
   const spontaneousSectionRef = useRef<HTMLDivElement | null>(null);
 
@@ -429,7 +430,22 @@ export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode
                         </div>
                       )}
                       <p className="text-xs whitespace-pre-wrap">{app.message}</p>
-                      <div className="mt-2 flex justify-end">
+                      <div className="mt-2 flex justify-end gap-2">
+                        {onDeleteCompanyApplication && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-[11px] text-destructive hover:text-destructive hover:bg-destructive/5"
+                            onClick={() => {
+                              const ok = window.confirm("Sei sicuro di voler eliminare questa candidatura?");
+                              if (ok) {
+                                onDeleteCompanyApplication(app);
+                              }
+                            }}
+                          >
+                            Elimina
+                          </Button>
+                        )}
                         <Button
                           size="sm"
                           variant="outline"

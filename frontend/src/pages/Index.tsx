@@ -514,6 +514,53 @@ const Index = () => {
     }
   };
 
+  const deleteCompanyApplication = async (app: CompanyApplication) => {
+    if (!jwtToken || authRole !== "company") return;
+    try {
+      const params = new URLSearchParams({
+        jd_id: app.jd_id,
+        candidate_user_id: app.candidate_user_id,
+        timestamp: app.timestamp,
+      });
+      const res = await fetch(`/api/contact/application?${params.toString()}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${jwtToken}`,
+        },
+      });
+      if (!res.ok) {
+        const txt = await res.text();
+        toast({
+          title: "Errore eliminazione candidatura",
+          description: txt || "Non è stato possibile eliminare la candidatura.",
+          variant: "destructive",
+        });
+        return;
+      }
+      setCompanyApplications((prev) =>
+        prev.filter(
+          (c) =>
+            !(
+              c.jd_id === app.jd_id &&
+              c.candidate_user_id === app.candidate_user_id &&
+              c.timestamp === app.timestamp
+            )
+        )
+      );
+      toast({
+        title: "Candidatura eliminata",
+        description: "La candidatura spontanea è stata rimossa.",
+      });
+    } catch (err) {
+      console.error("Errore eliminazione candidatura", err);
+      toast({
+        title: "Errore eliminazione candidatura",
+        description: "Non è stato possibile eliminare la candidatura.",
+        variant: "destructive",
+      });
+    }
+  };
+
   const fetchCompanyReplies = async () => {
     if (!jwtToken || authRole !== "company") return;
     try {
@@ -552,12 +599,13 @@ const Index = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authRole, jwtToken]);
 
-  // Polling leggero per aggiornare la inbox (campanella) del candidato
+  // Polling leggero per aggiornare inbox (campanella) e feedback candidato
   useEffect(() => {
     if (authRole !== "candidate" || !jwtToken) return;
 
     const intervalId = window.setInterval(() => {
       fetchInbox();
+      fetchFeedback();
     }, 8000);
 
     return () => window.clearInterval(intervalId);
@@ -1948,6 +1996,7 @@ const Index = () => {
                 companyName={currentUserProfile?.company}
                 companyApplications={companyApplications}
                 jwtToken={jwtToken}
+                onDeleteCompanyApplication={deleteCompanyApplication}
               />
             </TabsContent>
 
