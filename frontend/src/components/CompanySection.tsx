@@ -419,7 +419,7 @@ export const CompanySection = ({
     location_remote: false,
     constraints_visa: false,
     constraints_relocation: false,
-    constraints_seniority: "junior",
+    jwtToken: string | null; // Changed to required
     languages_min: "",
     dei_gender: "",
     dei_underrepresented: "",
@@ -430,6 +430,7 @@ export const CompanySection = ({
   });
   const [requirements, setRequirements] = useState<{ text: string; type: "must" | "nice" }[]>([]);
   const [newReq, setNewReq] = useState("");
+    jwtToken,
   const [reqType, setReqType] = useState<"must" | "nice">("must");
 
   const handleAddRequirement = () => {
