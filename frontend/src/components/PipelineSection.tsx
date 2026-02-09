@@ -86,7 +86,22 @@ export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode
   } | null>(null);
 
   const profileSharesMap = useMemo(() => {
-    const map: Record<string, { summary?: string; skills?: Skill[]; experiences?: Experience[] }> = {};
+    let map: Record<string, { summary?: string; skills?: Skill[]; experiences?: Experience[] }> = {};
+
+    // Base da localStorage per rendere persistenti i profili condivisi
+    try {
+      const raw = localStorage.getItem("piazzati:profileShares");
+      if (raw) {
+        const stored = JSON.parse(raw);
+        if (stored && typeof stored === "object") {
+          map = stored as Record<string, { summary?: string; skills?: Skill[]; experiences?: Experience[] }>;
+        }
+      }
+    } catch {
+      // ignora errori di parsing/localStorage
+    }
+
+    // Sovrascrive/integra con eventuali nuovi messaggi dal backend
     (companyReplies || []).forEach((reply) => {
       if (!reply.message) return;
       try {
@@ -103,6 +118,7 @@ export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode
         // ignora messaggi non JSON
       }
     });
+
     return map;
   }, [companyReplies]);
 

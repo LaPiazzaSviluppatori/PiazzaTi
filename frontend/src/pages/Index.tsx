@@ -650,6 +650,40 @@ const Index = () => {
     [companyReplies, seenCompanyReplyKeys, buildCompanyReplyKey]
   );
 
+  // Persisti localmente i profili condivisi (profile_share) lato azienda
+  useEffect(() => {
+    if (authRole !== "company") return;
+    try {
+      const raw = localStorage.getItem("piazzati:profileShares");
+      const base = raw ? JSON.parse(raw) : {};
+      const next: Record<string, unknown> =
+        base && typeof base === "object" ? (base as Record<string, unknown>) : {};
+
+      companyReplies.forEach((reply) => {
+        if (!reply.message) return;
+        try {
+          const parsed = JSON.parse(reply.message);
+          if (parsed && parsed.type === "profile_share") {
+            const key = `${reply.jd_id}:${reply.candidate_id}`;
+            if (!next[key]) {
+              next[key] = {
+                summary: parsed.summary,
+                skills: parsed.skills,
+                experiences: parsed.experiences,
+              };
+            }
+          }
+        } catch {
+          // non è JSON, ignora
+        }
+      });
+
+      localStorage.setItem("piazzati:profileShares", JSON.stringify(next));
+    } catch {
+      // ignora errori localStorage/JSON
+    }
+  }, [authRole, companyReplies]);
+
   useEffect(() => {
     if (authRole === "candidate") {
       setHasUnreadInbox(unreadInboxMessages.length > 0);
@@ -1456,6 +1490,15 @@ const Index = () => {
           )}
           {unreadCompanyReplies.map((reply) => {
             const jd = jobDescriptions.find((j) => j.jd_id === reply.jd_id);
+            let preview = reply.message;
+            try {
+              const parsed = JSON.parse(reply.message);
+              if (parsed && typeof parsed === "object" && (parsed as { type?: string }).type === "profile_share") {
+                preview = "Il candidato ha condiviso il proprio profilo per questa posizione.";
+              }
+            } catch {
+              // non JSON, lascia invariato
+            }
             return (
               <div
                 key={reply.id}
@@ -1472,7 +1515,7 @@ const Index = () => {
                   </div>
                 ) : null}
                 <p className="text-[11px] line-clamp-2 whitespace-pre-wrap mb-1">
-                  {reply.message}
+                  {preview}
                 </p>
                 <div className="flex justify-end gap-2 mt-1">
                   <button
@@ -1585,6 +1628,17 @@ const Index = () => {
               )}
               {conversationMessages.map((m) => {
                 const isCandidate = m.from_role === "candidate";
+                let displayMessage = m.message;
+                try {
+                  const parsed = JSON.parse(m.message);
+                  if (parsed && typeof parsed === "object" && (parsed as { type?: string }).type === "profile_share") {
+                    displayMessage =
+                      "Hai condiviso il tuo profilo (descrizione, competenze ed esperienze) per questa posizione.";
+                  }
+                } catch {
+                  // messaggio non JSON, lascia invariato
+                }
+
                 return (
                   <div
                     key={m.id}
@@ -1600,7 +1654,7 @@ const Index = () => {
                           {m.from_company || m.from_name || "Azienda"}
                         </div>
                       )}
-                      <div className="whitespace-pre-wrap text-[11px]">{m.message}</div>
+                      <div className="whitespace-pre-wrap text-[11px]">{displayMessage}</div>
                     </div>
                   </div>
                 );
@@ -2089,6 +2143,7 @@ const Index = () => {
                 companyApplications={companyApplications}
                 jwtToken={jwtToken}
                 onDeleteCompanyApplication={deleteCompanyApplication}
+                companyReplies={companyReplies}
               />
             </TabsContent>
 
