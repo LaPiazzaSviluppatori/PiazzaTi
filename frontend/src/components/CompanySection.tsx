@@ -29,6 +29,7 @@ export const CompanySection = ({
   auditLog,
   onCloseShortlist,
   companyName,
+  jwtToken,
 }: CompanySectionProps) => {
   const storageKey = null;
 
@@ -50,10 +51,14 @@ export const CompanySection = ({
     let cancelled = false;
     const loadPosts = async () => {
       try {
+        const headers: Record<string, string> = {
+          "Content-Type": "application/json",
+        };
+        if (jwtToken) {
+          headers["Authorization"] = `Bearer ${jwtToken}`;
+        }
         const res = await fetch("/api/company-posts", {
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers,
         });
         if (!res.ok) return;
         const data = await res.json();
@@ -75,7 +80,7 @@ export const CompanySection = ({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [jwtToken]);
 
   const handlePostImageChange = (files?: FileList | null) => {
     if (!files || files.length === 0) {
@@ -120,11 +125,15 @@ export const CompanySection = ({
 
     if (editingPostId) {
       try {
+        const headers: Record<string, string> = {
+          "Content-Type": "application/json",
+        };
+        if (jwtToken) {
+          headers["Authorization"] = `Bearer ${jwtToken}`;
+        }
         const res = await fetch(`/api/company-posts/${encodeURIComponent(editingPostId)}`, {
           method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers,
           body: JSON.stringify({
             text: postText.trim(),
             images: postImagePreviews,
@@ -154,11 +163,15 @@ export const CompanySection = ({
       }
     } else {
       try {
+        const headers: Record<string, string> = {
+          "Content-Type": "application/json",
+        };
+        if (jwtToken) {
+          headers["Authorization"] = `Bearer ${jwtToken}`;
+        }
         const res = await fetch("/api/company-posts", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers,
           body: JSON.stringify({
             text: postText.trim(),
             images: postImagePreviews,
@@ -191,8 +204,13 @@ export const CompanySection = ({
 
   const handleDeletePost = async (id: string) => {
     try {
+      const headers: Record<string, string> = {};
+      if (jwtToken) {
+        headers["Authorization"] = `Bearer ${jwtToken}`;
+      }
       const res = await fetch(`/api/company-posts/${encodeURIComponent(id)}`, {
         method: "DELETE",
+        headers,
       });
       if (!res.ok) {
         const txt = await res.text();
@@ -419,7 +437,7 @@ export const CompanySection = ({
     location_remote: false,
     constraints_visa: false,
     constraints_relocation: false,
-    jwtToken: string | null; // Changed to required
+    constraints_seniority: "junior" as "junior" | "mid" | "senior",
     languages_min: "",
     dei_gender: "",
     dei_underrepresented: "",
@@ -430,7 +448,6 @@ export const CompanySection = ({
   });
   const [requirements, setRequirements] = useState<{ text: string; type: "must" | "nice" }[]>([]);
   const [newReq, setNewReq] = useState("");
-    jwtToken,
   const [reqType, setReqType] = useState<"must" | "nice">("must");
 
   const handleAddRequirement = () => {
