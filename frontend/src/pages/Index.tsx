@@ -1698,6 +1698,17 @@ const Index = () => {
               )}
               {companyConversationMessages.map((m) => {
                 const isCompany = m.from_role === "company";
+                let displayMessage = m.message;
+                try {
+                  const parsed = JSON.parse(m.message);
+                  if (parsed && typeof parsed === "object" && (parsed as { type?: string }).type === "profile_share") {
+                    displayMessage =
+                      "Il candidato ha condiviso il proprio profilo. Usa il pulsante 'Visualizza profilo' nella sezione pipeline per vedere i dettagli.";
+                  }
+                } catch {
+                  // messaggio non JSON, lascialo invariato
+                }
+
                 return (
                   <div
                     key={m.id}
@@ -1713,7 +1724,7 @@ const Index = () => {
                           Candidato
                         </div>
                       )}
-                      <div className="whitespace-pre-wrap text-[11px]">{m.message}</div>
+                      <div className="whitespace-pre-wrap text-[11px]">{displayMessage}</div>
                     </div>
                   </div>
                 );
