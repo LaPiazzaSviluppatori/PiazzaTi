@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import List, Dict, Set, Tuple
 from datetime import datetime
 import pandas as pd
+import numpy as np
 import logging
 
 # Basic logger for this script
@@ -569,7 +570,22 @@ def process_files(input_dir: str, output_dir: str, output_file: str):
         for row_index, row_data in rows_to_update:
             for col, value in row_data.items():
                 if col in existing_df.columns:
-                    existing_df.at[row_index, col] = value
+                    # Gestione sicura dei tipi: evitiamo LossySetitemError
+                    col_dtype = existing_df[col].dtype
+
+                    # Se la colonna è numerica e il valore è vuoto, mettiamo NaN
+                    if pd.api.types.is_numeric_dtype(col_dtype):
+                        if value in ("", None):
+                            existing_df.at[row_index, col] = np.nan
+                        else:
+                            try:
+                                existing_df.at[row_index, col] = float(value)
+                            except (TypeError, ValueError):
+                                # Fallback: castiamo la colonna a object e salviamo il valore così com'è
+                                existing_df[col] = existing_df[col].astype(object)
+                                existing_df.at[row_index, col] = value
+                    else:
+                        existing_df.at[row_index, col] = value
                 else:
                     # NOVITÀ: se la colonna non esiste (nuovo tag), la creiamo
                     existing_df[col] = None
