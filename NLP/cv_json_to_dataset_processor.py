@@ -490,8 +490,10 @@ def process_files(input_dir: str, output_dir: str, output_file: str):
             if sha256 and sha256 not in existing_sha256:
                 files_to_update.append((json_file, user_id, sha256, user_id_to_index[user_id]))
                 logger.info(f"UPDATE: {json_file.name} -> {user_id}")
-                # Sposta il file in cvs_processed
-                json_file.rename(processed_folder / json_file.name)
+                # IMPORTANTE: non spostare ancora il file in cvs_processed.
+                # Verrà spostato SOLO dopo essere stato letto e processato
+                # nel blocco "files_to_update" più sotto, così il path resta
+                # valido quando facciamo open(json_file,...).
             else:
                 files_skipped_both.append((json_file.name, user_id, sha256))
                 logger.info(f"SKIP (duplicato): {json_file.name}")
