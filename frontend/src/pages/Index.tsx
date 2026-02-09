@@ -198,8 +198,15 @@ const Index = () => {
   const [hasUnreadInbox, setHasUnreadInbox] = useState(false);
 
   const buildInboxKey = useCallback((msg: InboxMessage): string => {
-    // Usa l'id stabile generato dal backend per identificare in modo univoco il messaggio
-    return msg.id;
+    // Chiave stabile basata sui contenuti del messaggio, così non cambia
+    // se l'ordinamento lato backend (e quindi l'id) varia nel tempo.
+    return [
+      msg.timestamp,
+      msg.jd_id,
+      msg.from_company || "",
+      msg.from_name || "",
+      msg.message,
+    ].join("|");
   }, []);
 
   const [seenInboxKeys, setSeenInboxKeys] = useState<string[]>(() => {

@@ -595,6 +595,23 @@ async def get_company_inbox(
                 except json.JSONDecodeError:
                     continue
 
+        # Estendi le coppie consentite anche a quelle dove c'è stato almeno
+        # un messaggio iniziale dall'azienda verso il candidato per quella JD,
+        # così le conversazioni avviate dalla Top20 sono visibili in inbox.
+        if company_name:
+            for e in raw_entries:
+                from_role = str(e.get("from_role")) if e.get("from_role") is not None else None
+                if from_role != "company":
+                    continue
+                # Matcha per nome azienda (backward-compatible se manca from_company)
+                from_company = str(e.get("from_company")) if e.get("from_company") is not None else None
+                if from_company and from_company != company_name:
+                    continue
+                cid = str(e.get("candidate_id"))
+                jd_id = str(e.get("jd_id"))
+                if cid and jd_id:
+                    allowed_pairs.add((cid, jd_id))
+
         # Filtra solo i messaggi inviati dai candidati per coppie (candidate_id, jd_id) valide
         entries = []
         for e in raw_entries:
@@ -886,10 +903,16 @@ async def get_conversation_company(
     if not log_path.exists():
         return []
 
-    # Verifica che esista almeno una candidatura per questa combinazione
-    if apps_path.exists():
+    # Verifica che l'azienda sia autorizzata a vedere questa conversazione.
+    # Ci sono due casi validi:
+    # 1) Esiste almeno una candidatura (applications.jsonl) per (candidate_id, jd_id, company)
+    # 2) L'azienda ha inviato almeno un messaggio iniziale a quel candidato per quella JD
+    company_name = getattr(current_user, "company", None)
+    has_access = False
+
+    # Caso 1: candidatura presente
+    if apps_path.exists() and company_name:
         try:
-            has_application = False
             with apps_path.open("r", encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
@@ -902,16 +925,40 @@ async def get_conversation_company(
                     if (
                         str(raw.get("candidate_user_id")) == str(candidate_id)
                         and str(raw.get("jd_id")) == str(jd_id)
-                        and str(raw.get("company")) == getattr(current_user, "company", None)
+                        and str(raw.get("company")) == company_name
                     ):
-                        has_application = True
+                        has_access = True
                         break
-            if not has_application:
-                raise HTTPException(status_code=403, detail="Conversazione non autorizzata per questa azienda")
-        except HTTPException:
-            raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Errore verifica candidatura: {e}")
+
+    # Caso 2: conversazione avviata dall'azienda (es. da Top 20)
+    if not has_access and company_name:
+        try:
+            with log_path.open("r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        raw = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    from_role = str(raw.get("from_role")) if raw.get("from_role") is not None else None
+                    if from_role != "company":
+                        continue
+                    if (
+                        str(raw.get("candidate_id")) == str(candidate_id)
+                        and str(raw.get("jd_id")) == str(jd_id)
+                        and str(raw.get("from_company")) == company_name
+                    ):
+                        has_access = True
+                        break
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Errore verifica conversazione azienda: {e}")
+
+    if not has_access:
+        raise HTTPException(status_code=403, detail="Conversazione non autorizzata per questa azienda")
 
     try:
         raw_entries: List[Dict[str, Any]] = []
