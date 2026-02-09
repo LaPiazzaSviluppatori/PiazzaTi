@@ -612,6 +612,19 @@ const Index = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authRole, jwtToken]);
 
+  // Polling leggero per aggiornare inbox lato azienda (candidature + risposte chat)
+  useEffect(() => {
+    if (authRole !== "company" || !jwtToken) return;
+
+    const intervalId = window.setInterval(() => {
+      fetchCompanyApplications();
+      fetchCompanyReplies();
+    }, 8000);
+
+    return () => window.clearInterval(intervalId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authRole, jwtToken]);
+
   const unreadInboxMessages = useMemo(
     () =>
       inboxMessages.filter((msg) => !seenInboxKeys.includes(buildInboxKey(msg))),

@@ -281,15 +281,38 @@ const GestisciCandidature: React.FC<GestisciCandidatureProps> = ({
   const handleSendContact = async () => {
     if (!contactTarget) return;
 
-    try {
-      // TODO: integrare con backend reale quando disponibile
-      if (!jwtToken) {
-        console.warn("Invio messaggio candidato senza jwtToken: stub solo frontend");
-      }
+    const message = contactDraft.trim();
+    if (!message) {
+      toast({
+        title: "Messaggio vuoto",
+        description: "Scrivi un breve messaggio prima di inviare.",
+        variant: "destructive",
+      });
+      return;
+    }
 
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (jwtToken) {
+        headers["Authorization"] = `Bearer ${jwtToken}`;
+      }
+      const res = await fetch("/api/contact/candidate", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          jd_id: contactTarget.jdId,
+          candidate_id: contactTarget.candidate.user_id,
+          message,
+          origin: "top20",
+        }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "Errore dal server");
+      }
       toast({
         title: "Messaggio inviato",
-        description: "Il messaggio è stato registrato (stub lato frontend).",
+        description: "Il candidato riceverà il tuo messaggio nella sua inbox.",
       });
     } catch (err) {
       console.error("Errore invio messaggio al candidato", err);
