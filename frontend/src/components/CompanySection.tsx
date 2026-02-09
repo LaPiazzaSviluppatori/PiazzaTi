@@ -18,6 +18,7 @@ interface CompanySectionProps {
   auditLog: AuditLogEntry[];
   onCloseShortlist: (jdId: string, override?: { reason: string }) => void;
   companyName?: string | null;
+  jwtToken?: string | null;
 }
 
 export const CompanySection = ({
@@ -29,11 +30,10 @@ export const CompanySection = ({
   onCloseShortlist,
   companyName,
 }: CompanySectionProps) => {
-  const storageKey = companyName
-    ? `piazzati:companyPosts:${companyName}`
-    : null;
+  const storageKey = null;
 
   type CompanyPost = { id: string; text: string; images?: string[]; createdAt: string };
+  type CompanyPostApi = { id: string; text?: string; images?: string[] | null; created_at?: string };
 
   const [posts, setPosts] = useState<CompanyPost[]>([]);
   const [postText, setPostText] = useState("");
@@ -45,49 +45,37 @@ export const CompanySection = ({
   const postImageInputRef = useRef<HTMLInputElement | null>(null);
 
   const emojiOptions = ["😊", "🚀", "🎯", "💼", "📣", "🔥"];
-
-  // Carica i post aziendali da localStorage all'avvio / cambio azienda
+  // Carica i post aziendali dal backend all'avvio
   useEffect(() => {
-    try {
-      if (!storageKey) {
-        setPosts([]);
-        return;
-      }
-
-      const raw = localStorage.getItem(storageKey);
-      if (!raw) {
-        setPosts([]);
-        return;
-      }
-
-      const parsed = JSON.parse(raw) as Array<CompanyPost & { image?: string }>;
-      const normalized: CompanyPost[] = parsed.map((p) => {
-        if (p.images && p.images.length > 0) return { ...p, images: [...p.images] };
-        if (p.image) {
-          return { id: p.id, text: p.text, images: [p.image], createdAt: p.createdAt };
+    let cancelled = false;
+    const loadPosts = async () => {
+      try {
+        const res = await fetch("/api/company-posts", {
+          headers: {
+            "Content-Type": "application/json",
+          },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!Array.isArray(data)) return;
+        if (!cancelled) {
+          const normalized: CompanyPost[] = data.map((p: CompanyPostApi) => ({
+            id: String(p.id),
+            text: String(p.text ?? ""),
+            images: Array.isArray(p.images) ? p.images : [],
+            createdAt: String(p.created_at ?? new Date().toISOString()),
+          }));
+          setPosts(normalized);
         }
-        return { id: p.id, text: p.text, images: [], createdAt: p.createdAt };
-      });
-
-      setPosts(normalized);
-    } catch {
-      setPosts([]);
-    }
-  }, [storageKey]);
-
-  // Salva i post aziendali in localStorage quando cambiano
-  useEffect(() => {
-    try {
-      if (!storageKey) return;
-      if (posts.length > 0) {
-        localStorage.setItem(storageKey, JSON.stringify(posts));
-      } else {
-        localStorage.removeItem(storageKey);
+      } catch {
+        // silenzioso: i post non sono critici
       }
-    } catch {
-      // ignore storage errors
-    }
-  }, [posts, storageKey]);
+    };
+    loadPosts();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handlePostImageChange = (files?: FileList | null) => {
     if (!files || files.length === 0) {
@@ -124,34 +112,75 @@ export const CompanySection = ({
       });
   };
 
-  const handleCreatePost = () => {
+  const handleCreatePost = async () => {
     if (!postText.trim() && postImagePreviews.length === 0) {
       toast({ title: "Contenuto richiesto", description: "Inserisci testo o carica un'immagine.", variant: "destructive" });
       return;
     }
 
     if (editingPostId) {
-      setPosts(prev =>
-        prev.map(p =>
-          p.id === editingPostId
-            ? {
-                ...p,
-                text: postText.trim(),
-                images: postImagePreviews.length > 0 ? [...postImagePreviews] : [],
-              }
-            : p
-        )
-      );
-      toast({ title: "Post aggiornato", description: "Le modifiche al post sono state salvate." });
+      try {
+        const res = await fetch(`/api/company-posts/${encodeURIComponent(editingPostId)}`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            text: postText.trim(),
+            images: postImagePreviews,
+          }),
+        });
+        if (!res.ok) {
+          const txt = await res.text();
+          throw new Error(txt || "Errore aggiornamento post");
+        }
+        const updated = await res.json();
+        setPosts(prev =>
+          prev.map(p =>
+            p.id === editingPostId
+              ? {
+                  id: String(updated.id),
+                  text: String(updated.text ?? ""),
+                  images: Array.isArray(updated.images) ? updated.images : [],
+                  createdAt: String(updated.created_at ?? p.createdAt),
+                }
+              : p
+          )
+        );
+        toast({ title: "Post aggiornato", description: "Le modifiche al post sono state salvate." });
+      } catch (err) {
+        toast({ title: "Errore aggiornamento", description: "Non è stato possibile aggiornare il post.", variant: "destructive" });
+        return;
+      }
     } else {
-      const newPost: CompanyPost = {
-        id: String(Date.now()),
-        text: postText.trim(),
-        images: postImagePreviews.length > 0 ? [...postImagePreviews] : [],
-        createdAt: new Date().toISOString(),
-      };
-      setPosts(prev => [newPost, ...prev]);
-      toast({ title: "Post pubblicato", description: "Il tuo post è visibile nella timeline aziendale." });
+      try {
+        const res = await fetch("/api/company-posts", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            text: postText.trim(),
+            images: postImagePreviews,
+          }),
+        });
+        if (!res.ok) {
+          const txt = await res.text();
+          throw new Error(txt || "Errore creazione post");
+        }
+        const created = await res.json();
+        const newPost: CompanyPost = {
+          id: String(created.id),
+          text: String(created.text ?? ""),
+          images: Array.isArray(created.images) ? created.images : [],
+          createdAt: String(created.created_at ?? new Date().toISOString()),
+        };
+        setPosts(prev => [newPost, ...prev]);
+        toast({ title: "Post pubblicato", description: "Il tuo post è visibile nella timeline aziendale." });
+      } catch (err) {
+        toast({ title: "Errore pubblicazione", description: "Non è stato possibile pubblicare il post.", variant: "destructive" });
+        return;
+      }
     }
 
     setPostText("");
@@ -160,9 +189,20 @@ export const CompanySection = ({
     setEditingPostId(null);
   };
 
-  const handleDeletePost = (id: string) => {
-    setPosts(prev => prev.filter(p => p.id !== id));
-    toast({ title: "Post eliminato", description: "Il post è stato rimosso dalla timeline." });
+  const handleDeletePost = async (id: string) => {
+    try {
+      const res = await fetch(`/api/company-posts/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(txt || "Errore eliminazione post");
+      }
+      setPosts(prev => prev.filter(p => p.id !== id));
+      toast({ title: "Post eliminato", description: "Il post è stato rimosso dalla timeline." });
+    } catch (err) {
+      toast({ title: "Errore eliminazione", description: "Non è stato possibile eliminare il post.", variant: "destructive" });
+    }
   };
 
   const handleEditPost = (post: CompanyPost) => {

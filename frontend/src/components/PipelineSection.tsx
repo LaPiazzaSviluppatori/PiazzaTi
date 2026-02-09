@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Briefcase, TrendingUp } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
-import { AuditLogEntry, Candidate, JobDescription } from "@/types";
+import { AuditLogEntry, Candidate, JobDescription, Skill, Experience } from "@/types";
 import GestisciCandidature from "./GestisciCandidature";
 
 type PipelineMode = "candidate" | "company";
@@ -68,9 +68,10 @@ interface XAIData {
 
 interface PipelineSectionAllProps extends PipelineSectionExtendedProps {
   markCompanyAppAsSeen?: (app: CompanyApplication) => void;
+  companyReplies?: { jd_id: string; candidate_id: string; message: string }[];
 }
 
-export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode, isParsing, mode = "company", onCreateJd, companyName, companyApplications = [], jwtToken, onDeleteCompanyApplication, markCompanyAppAsSeen }: PipelineSectionAllProps) => {
+export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode, isParsing, mode = "company", onCreateJd, companyName, companyApplications = [], jwtToken, onDeleteCompanyApplication, markCompanyAppAsSeen, companyReplies = [] }: PipelineSectionAllProps) => {
   const isCompanyMode = mode === "company";
   const spontaneousSectionRef = useRef<HTMLDivElement | null>(null);
 
@@ -83,6 +84,27 @@ export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode
     jdTitle: string;
     candidateName?: string | null;
   } | null>(null);
+
+  const profileSharesMap = useMemo(() => {
+    const map: Record<string, { summary?: string; skills?: Skill[]; experiences?: Experience[] }> = {};
+    (companyReplies || []).forEach((reply) => {
+      if (!reply.message) return;
+      try {
+        const parsed = JSON.parse(reply.message);
+        if (parsed && parsed.type === "profile_share") {
+          const key = `${reply.jd_id}:${reply.candidate_id}`;
+          map[key] = {
+            summary: parsed.summary,
+            skills: parsed.skills,
+            experiences: parsed.experiences,
+          };
+        }
+      } catch {
+        // ignora messaggi non JSON
+      }
+    });
+    return map;
+  }, [companyReplies]);
 
   const handleOpenContactFromApplication = (app: CompanyApplication, jdTitle?: string) => {
     if (markCompanyAppAsSeen) {
@@ -404,6 +426,7 @@ export const PipelineSection = ({ candidates, jobDescriptions, auditLog, deiMode
           jobDescriptions={jobDescriptions}
           companyName={companyName}
           jwtToken={jwtToken}
+          profileSharesMap={profileSharesMap}
         />
         {companyApplications.length > 0 && (
           <div ref={spontaneousSectionRef} id="company-spontaneous-section">

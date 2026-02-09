@@ -15,13 +15,14 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "@/hooks/use-toast";
 
-import type { JobDescription } from "@/types";
+import type { JobDescription, Skill, Experience } from "@/types";
 
 interface GestisciCandidatureProps {
   onCreateJd?: (jd: Omit<JobDescription, "id" | "createdAt">) => void;
   jobDescriptions: JobDescription[];
   companyName?: string | null;
   jwtToken?: string | null;
+  profileSharesMap?: Record<string, { summary?: string; skills?: Skill[]; experiences?: Experience[] }>;
 }
 
 type JDMatchCandidate = {
@@ -49,6 +50,7 @@ const GestisciCandidature: React.FC<GestisciCandidatureProps> = ({
   jobDescriptions,
   companyName,
   jwtToken,
+  profileSharesMap,
 }) => {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [jdForm, setJdForm] = useState({
@@ -208,6 +210,15 @@ const GestisciCandidature: React.FC<GestisciCandidatureProps> = ({
     jdTitle: string;
   } | null>(null);
 
+  const [profileDialogOpen, setProfileDialogOpen] = useState(false);
+  const [profileDialogData, setProfileDialogData] = useState<{
+    jdTitle: string;
+    candidateLabel: string;
+    summary?: string;
+    skills?: Skill[];
+    experiences?: Experience[];
+  } | null>(null);
+
   const handleShowMatches = async (jdId: string) => {
     setMatchJdId(jdId);
     setMatchLoading(true);
@@ -234,6 +245,45 @@ const GestisciCandidature: React.FC<GestisciCandidatureProps> = ({
     setContactTarget({ candidate, jdId, jdTitle });
     setContactDraft("");
     setContactDialogOpen(true);
+  };
+
+  const handleRequestProfileView = async (candidate: JDMatchCandidate, jdId: string, jdTitle: string) => {
+    const message = `Ti viene chiesto di condividere il tuo profilo per la posizione "${jdTitle}". Se accetti, autorizza la condivisione del tuo profilo dalla tua inbox.`;
+
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (jwtToken) {
+        headers["Authorization"] = `Bearer ${jwtToken}`;
+      }
+
+      const res = await fetch("/api/contact/candidate", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          jd_id: jdId,
+          candidate_id: candidate.user_id,
+          message,
+          origin: "profile_request",
+        }),
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "Errore dal server");
+      }
+
+      toast({
+        title: "Richiesta inviata",
+        description: "Il candidato riceverà una richiesta di condivisione del profilo nella sua inbox.",
+      });
+    } catch (err) {
+      console.error("Errore invio richiesta profilo", err);
+      toast({
+        title: "Errore richiesta profilo",
+        description: "Non è stato possibile inviare la richiesta di visualizzazione del profilo.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleLoadXaiForCandidate = async (jdId: string, candidate: JDMatchCandidate) => {
@@ -662,6 +712,9 @@ const GestisciCandidature: React.FC<GestisciCandidatureProps> = ({
                             const key = `${jd.jd_id}:${c.user_id}`;
                             const xai = xaiByCandidate[key];
                             const xaiError = xaiErrorByCandidate[key];
+                            const profileKey = `${jd.jd_id}:${c.user_id}`;
+                            const sharedProfile = profileSharesMap?.[profileKey];
+                            const isProfileAccepted = !!sharedProfile;
                             const qualityLabel = xai?.quality_label;
                             const qualityLabelText = qualityLabel === "EXCELLENT"
                               ? "Eccellente"
@@ -743,6 +796,11 @@ const GestisciCandidature: React.FC<GestisciCandidatureProps> = ({
                                   </div>
                                 </div>
                                 <div className="flex flex-col items-end gap-1">
+                                  {isProfileAccepted && (
+                                    <span className="mb-0.5 inline-flex items-center rounded-full bg-emerald-100 text-emerald-800 px-2 py-0.5 text-[10px] font-semibold">
+                                      Richiesta profilo accettata
+                                    </span>
+                                  )}
                                   <Button
                                     type="button"
                                     variant="outline"
@@ -752,6 +810,37 @@ const GestisciCandidature: React.FC<GestisciCandidatureProps> = ({
                                   >
                                     Contatta
                                   </Button>
+                                  {isProfileAccepted ? (
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-6 px-2 text-[10px]"
+                                      onClick={() => {
+                                        if (!sharedProfile) return;
+                                        setProfileDialogData({
+                                          jdTitle: jd.title,
+                                          candidateLabel: `Candidato #${c.rank}`,
+                                          summary: sharedProfile.summary,
+                                          skills: sharedProfile.skills,
+                                          experiences: sharedProfile.experiences,
+                                        });
+                                        setProfileDialogOpen(true);
+                                      }}
+                                    >
+                                      Visualizza profilo
+                                    </Button>
+                                  ) : (
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-6 px-2 text-[10px]"
+                                      onClick={() => handleRequestProfileView(c, jd.jd_id, jd.title)}
+                                    >
+                                      Richiedi profilo
+                                    </Button>
+                                  )}
                                 </div>
                               </div>
                             );
@@ -816,6 +905,75 @@ const GestisciCandidature: React.FC<GestisciCandidatureProps> = ({
             </Button>
             <Button type="button" onClick={handleSendContact}>
               Invia messaggio
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={profileDialogOpen}
+        onOpenChange={(open) => {
+          setProfileDialogOpen(open);
+          if (!open) {
+            setProfileDialogData(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Profilo candidato</DialogTitle>
+            {profileDialogData?.jdTitle && (
+              <DialogDescription>
+                Posizione: <span className="font-semibold">{profileDialogData.jdTitle}</span>
+              </DialogDescription>
+            )}
+          </DialogHeader>
+          <div className="space-y-3 py-2 text-sm">
+            {profileDialogData?.summary && (
+              <div>
+                <p className="font-semibold text-xs text-muted-foreground mb-1">Descrizione</p>
+                <p className="text-xs whitespace-pre-wrap">{profileDialogData.summary}</p>
+              </div>
+            )}
+            {profileDialogData?.skills && profileDialogData.skills.length > 0 && (
+              <div>
+                <p className="font-semibold text-xs text-muted-foreground mb-1">Competenze</p>
+                <ul className="list-disc ml-4 space-y-0.5">
+                  {profileDialogData.skills.map((s, idx) => (
+                    <li key={idx} className="text-xs">
+                      {s.name}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {profileDialogData?.experiences && profileDialogData.experiences.length > 0 && (
+              <div>
+                <p className="font-semibold text-xs text-muted-foreground mb-1">Esperienze</p>
+                <div className="space-y-1.5">
+                  {profileDialogData.experiences.map((e, idx) => (
+                    <div key={idx} className="border rounded px-2 py-1 bg-muted/40">
+                      <p className="text-xs font-semibold">
+                        {e.title || "Ruolo"}
+                        {e.company ? ` · ${e.company}` : ""}
+                      </p>
+                      {e.period && (
+                        <p className="text-[11px] text-muted-foreground">{e.period}</p>
+                      )}
+                      {e.description && (
+                        <p className="text-[11px] whitespace-pre-wrap mt-0.5">
+                          {e.description}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button type="button" onClick={() => setProfileDialogOpen(false)}>
+              Chiudi
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -659,6 +659,61 @@ const Index = () => {
   // Current candidate sempre sincronizzato
   const currentCandidate = candidates.find(c => c.id === activeCandidateId) || candidates[0];
 
+  const handleAcceptProfileRequest = async (msg: InboxMessage) => {
+    if (!jwtToken || authRole !== "candidate") return;
+    const candidate = currentCandidate;
+    if (!candidate) return;
+
+    const payload = {
+      type: "profile_share",
+      summary: candidate.summary,
+      skills: candidate.skills,
+      experiences: candidate.experiences,
+    };
+
+    try {
+      const res = await fetch("/api/contact/reply", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${jwtToken}`,
+        },
+        body: JSON.stringify({
+          jd_id: msg.jd_id,
+          message: JSON.stringify(payload),
+        }),
+      });
+      if (!res.ok) {
+        const txt = await res.text();
+        toast({
+          title: "Errore condivisione profilo",
+          description: txt || "Non è stato possibile condividere il profilo.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      toast({
+        title: "Profilo condiviso",
+        description:
+          "La tua descrizione, competenze ed esperienze sono state inviate all'azienda.",
+      });
+
+      markInboxAsSeen(msg);
+      setLastConversationJdId(msg.jd_id);
+      setOpenConversationJdId(msg.jd_id);
+      await fetchConversation(msg.jd_id);
+      setInboxOpen(false);
+    } catch (err) {
+      console.error("Errore invio profilo", err);
+      toast({
+        title: "Errore condivisione profilo",
+        description: "Non è stato possibile condividere il profilo.",
+        variant: "destructive",
+      });
+    }
+  };
+
   // Persistenza locale
   useEffect(() => {
     localStorage.setItem("piazzati:candidates", JSON.stringify(candidates));
@@ -1288,6 +1343,7 @@ const Index = () => {
           </div>
           {unreadInboxMessages.map((msg) => {
             const jdTitle = jobDescriptions.find((jd) => jd.jd_id === msg.jd_id)?.title;
+            const isProfileRequest = msg.origin === "profile_request";
             return (
               <div key={msg.id} className="border rounded-md px-2 py-2 text-xs bg-muted/60 space-y-1">
                 <div className="flex flex-col mb-1">
@@ -1308,14 +1364,18 @@ const Index = () => {
                   type="button"
                   className="mt-1 text-[11px] text-primary hover:underline"
                   onClick={async () => {
-                    setLastConversationJdId(msg.jd_id);
-                    markInboxAsSeen(msg);
-                    setOpenConversationJdId(msg.jd_id);
-                    await fetchConversation(msg.jd_id);
-                    setInboxOpen(false);
+                    if (isProfileRequest) {
+                      await handleAcceptProfileRequest(msg);
+                    } else {
+                      setLastConversationJdId(msg.jd_id);
+                      markInboxAsSeen(msg);
+                      setOpenConversationJdId(msg.jd_id);
+                      await fetchConversation(msg.jd_id);
+                      setInboxOpen(false);
+                    }
                   }}
                 >
-                  Accetta e apri chat
+                  {isProfileRequest ? "Accetta e condividi profilo" : "Accetta e apri chat"}
                 </button>
               </div>
             );
@@ -2000,6 +2060,7 @@ const Index = () => {
                   auditLog={auditLog}
                   onCloseShortlist={handleCloseShortlist}
                   companyName={currentUserProfile?.company}
+                  jwtToken={jwtToken}
                 />
               </TabsContent>
             )}
